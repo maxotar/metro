@@ -1,18 +1,33 @@
-#include <Arduino.h>
+struct ScheduleEvent
+{
+  uint32_t targetTime;
+  void (*callback)();
+  bool isActive;
+};
 
-// put function declarations here:
-int myFunction(int, int);
+ScheduleEvent eventList[MAX_EVENTS];
 
-void setup() {
-  // put your setup code here, to run once:
-  int result = myFunction(2, 3);
+void main()
+{
+  Hardware_Init();
+
+  while (true)
+  {
+    // 1. Process any events that should have fired by now
+    ProcessDueEvents();
+
+    // 2. Find the next closest event and schedule the hardware interrupt
+    PrepareNextWakeup();
+
+    // 3. Enter Low Power Mode (Sleep)
+    // The MCU stays here until the RTC CMP or another IRQ fires
+    EnterDeepSleep();
+  }
 }
 
-void loop() {
-  // put your main code here, to run repeatedly:
-}
-
-// put function definitions here:
-int myFunction(int x, int y) {
-  return x + y;
+// ISR (Interrupt Service Routine)
+void RTC_CMP_IRQHandler()
+{
+  // Just wake up the CPU; the main loop handles the logic
+  Clear_RTC_Interrupt_Flag();
 }

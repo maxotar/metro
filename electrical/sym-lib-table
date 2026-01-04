@@ -1,0 +1,5 @@
+(sym_lib_table
+  (version 7)
+  (lib (name "ATTINY1616-MN")(type "KiCad")(uri "${KIPRJMOD}/library/ATTINY1616-MN/2026-01-04_17-29-54.kicad_sym")(options "")(descr ""))
+  (lib (name "TS-1088-AR02016")(type "KiCad")(uri "${KIPRJMOD}/library/TS-1088-AR02016/TS-1088-AR02016.kicad_sym")(options "")(descr ""))
+)
