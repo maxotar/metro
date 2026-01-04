@@ -1,0 +1,19 @@
+(kicad_sch
+	(version 20250114)
+	(generator "eeschema")
+	(generator_version "9.0")
+	(uuid "b3f6d6fe-a5b4-421c-a9bd-ce203989d1c4")
+	(paper "USLetter")
+	(title_block
+		(title "Wearable Metronome")
+		(rev "1")
+		(company "Max Tarver Industries")
+	)
+	(lib_symbols)
+	(sheet_instances
+		(path "/"
+			(page "1")
+		)
+	)
+	(embedded_fonts no)
+)
