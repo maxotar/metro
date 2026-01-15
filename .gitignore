@@ -3,3 +3,21 @@
 .vscode/c_cpp_properties.json
 .vscode/launch.json
 .vscode/ipch
+
+# KiCad backup and auto-save files
+*-backups/
+*.bak
+*.bck
+*-save.kicad_pcb
+*-save.kicad_sch
+*.kicad_pcb-bak
+*.kicad_sch-bak
+
+# KiCad cache and local settings
+fp-info-cache
+*.kicad_prl
+
+# KiCad rescue libraries
+*-rescue.dcm
+*-rescue.lib
+*-rescue.kicad_sym
