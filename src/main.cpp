@@ -369,7 +369,7 @@ static void outputOnTask(void)
   if (!isPlaying)
     return;
 
-  // haptic_trigger();
+  haptic_trigger();
 
   statusLedOn();
 
@@ -382,9 +382,9 @@ static void outputOnTask(void)
 static void outputOffTask(void)
 {
   // Put DRV2605L into standby mode after waveform completes (Step 7 from datasheet)
-  // init_i2c();
-  // i2c_write_reg_u8(DRV2605L_ADDR, DRV2605L_REG_MODE, 0x40); // Set STANDBY bit
-  // i2c_shutdown();
+  init_i2c();
+  i2c_write_reg_u8(DRV2605L_ADDR, DRV2605L_REG_MODE, 0x40); // Set STANDBY bit
+  i2c_shutdown();
 
   statusLedOff();
 }
@@ -450,8 +450,8 @@ static void button2DebounceTask(void)
         taskList[i].isPending = false;
       }
 
-      ledOffTask();
       outputOffTask();
+      ledOffTask();
     }
   }
 }
@@ -485,7 +485,6 @@ ISR(PORTC_PORT_vect)
   uint8_t flags = PORTC.INTFLAGS;
   PORTC.INTFLAGS = flags;
 
-  // Schedule debounce tasks for pressed buttons
   // Only schedule if not already pending (prevents bounce rescheduling)
   if ((flags & BUTTON1_PIN) && !taskList[TASK_BUTTON1_DEBOUNCE].isPending)
   {
