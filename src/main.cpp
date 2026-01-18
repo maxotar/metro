@@ -54,9 +54,9 @@
 #define LED_LSB_PIN PIN5_bm  // PA5 - LSB (bit 0)
 
 // Timing constants (in RTC ticks at 1024Hz, 1 tick = 1ms)
-#define DEBOUNCE_DELAY 50   // 50ms
-#define LED_ON_DURATION 200 // 200ms
-#define HAPTIC_DURATION 75  // 75ms - strong click waveform duration + safety margin
+#define DEBOUNCE_DELAY 50
+#define LED_ON_DURATION 500
+#define HAPTIC_DURATION 75 // strong click waveform duration + safety margin
 #define BPM_INCREMENT 5
 #define BPM_MIN 40
 #define BPM_MAX 155
@@ -77,9 +77,9 @@ typedef void (*task_callback_t)(void);
 
 typedef struct
 {
-  uint16_t timeDue;         // Time when task should execute (in RTC ticks)
-  task_callback_t callback; // Function to call
-  volatile bool isPending;  // Set by ISR, cleared after execution
+  volatile uint16_t timeDue; // Time when task should execute (in RTC ticks)
+  volatile bool isPending;   // Set by ISR, cleared after execution
+  task_callback_t callback;  // Function to call
 } Task;
 
 #define NUM_TASKS 6
@@ -99,14 +99,14 @@ Task taskList[NUM_TASKS];
 volatile uint8_t bpm = 60;       // Default BPM
 volatile bool isPlaying = false; // Play/pause state
 
-void outputOnTask(void);
-void outputOffTask(void);
-void ledOffTask(void);
-void button1DebounceTask(void);
-void button2DebounceTask(void);
-void button3DebounceTask(void);
+static void outputOnTask(void);
+static void outputOffTask(void);
+static void ledOffTask(void);
+static void button1DebounceTask(void);
+static void button2DebounceTask(void);
+static void button3DebounceTask(void);
 
-void init_tasks(void)
+static void init_tasks(void)
 {
   taskList[TASK_OUTPUT_ON].callback = outputOnTask;
   taskList[TASK_OUTPUT_ON].isPending = false;
@@ -175,7 +175,7 @@ static void init_haptic_driver(void)
   i2c_shutdown();
 }
 
-void init_rtc(void)
+static void init_rtc(void)
 {
   while (RTC.STATUS > 0)
     ;
@@ -202,16 +202,14 @@ void init_rtc(void)
   // Enable RTC and set RUNSTDBY to keep running in sleep
   RTC.CTRLA = RTC_PRESCALER_DIV1_gc | RTC_RTCEN_bm | RTC_RUNSTDBY_bm;
 
-  // Set compare value for metronome beats
-  // For BPM-based timing, we'll update this dynamically
-  // Starting with ~100ms: 102 ticks at 1024Hz
-  // RTC.CMP = 102;
+  while (RTC.STATUS > 0)
+    ;
 
   // Don't enable compare interrupt yet; the scheduler arms it when tasks exist
   RTC.INTCTRL = 0;
 }
 
-void init_buttons(void)
+static void init_buttons(void)
 {
   // Configure PC1, PC2, PC3 as inputs with pull-ups
   PORTC.DIRCLR = BUTTON1_PIN | BUTTON2_PIN | BUTTON3_PIN;
@@ -220,7 +218,7 @@ void init_buttons(void)
   PORTC.PIN3CTRL = PORT_PULLUPEN_bm | PORT_ISC_FALLING_gc;
 }
 
-void init_leds(void)
+static void init_leds(void)
 {
   // Configure LED pins as outputs on PORTA (PA5, PA6, PA7)
   PORTA.DIRSET = LED_STATUS_PIN | LED_LSB_PIN | LED_BIT1_PIN | LED_BIT2_PIN;
@@ -231,7 +229,7 @@ void init_leds(void)
   PORTB.OUTSET = LED_MSB_PIN | LED_BIT3_PIN; // Start HIGH (LEDs off - active low)
 }
 
-void enterSleepStandby(void)
+static void enterSleepStandby(void)
 {
   set_sleep_mode(SLEEP_MODE_STANDBY); // Deepest sleep with RTC running (if enabled)
   cli();                              // Disable interrupts
@@ -241,7 +239,7 @@ void enterSleepStandby(void)
   sleep_disable();                    // Disable sleep mode after waking
 }
 
-void enterSleepShutdown(void)
+static void enterSleepShutdown(void)
 {
   set_sleep_mode(SLEEP_MODE_PWR_DOWN); // RTC off (cannot enable it)
   cli();                               // Disable interrupts
@@ -251,7 +249,7 @@ void enterSleepShutdown(void)
   sleep_disable();                     // Disable sleep mode after waking
 }
 
-void scheduleTask(uint8_t taskIndex, uint16_t delayTicks)
+static void scheduleTask(uint8_t taskIndex, uint16_t delayTicks)
 {
   uint16_t now = RTC.CNT;
   uint16_t due = now + delayTicks;
@@ -263,92 +261,84 @@ void scheduleTask(uint8_t taskIndex, uint16_t delayTicks)
   }
 }
 
-void processTasks(void)
+static void processTasks(void)
 {
   uint16_t now = RTC.CNT;
 
   for (uint8_t i = 0; i < NUM_TASKS; i++)
   {
-    bool pending;
-    uint16_t due;
+    bool shouldRun = false;
 
     ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
     {
-      pending = taskList[i].isPending;
-      due = taskList[i].timeDue;
+      if (taskList[i].isPending && (int16_t)(taskList[i].timeDue - now) <= 0)
+      {
+        taskList[i].isPending = false;
+        shouldRun = true;
+      }
     }
 
-    if (!pending)
-      continue;
-
-    // Check if task is due (handle wrap-around)
-    if ((int16_t)(due - now) <= 0)
+    if (shouldRun && taskList[i].callback != 0)
     {
-      bool shouldRun = false;
-
-      ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
-      {
-        if (taskList[i].isPending && (int16_t)(taskList[i].timeDue - now) <= 0)
-        {
-          taskList[i].isPending = false;
-          shouldRun = true;
-        }
-      }
-
-      if (shouldRun && taskList[i].callback != 0)
-      {
-        taskList[i].callback();
-      }
+      taskList[i].callback();
     }
   }
 }
 
-void prepareNextWakeup(void)
+static void prepareNextWakeup(void)
 {
-  uint16_t now = RTC.CNT;
   uint16_t nextTime = 0xFFFF;
   bool foundTask = false;
 
+  // 1. Find the earliest task (same as your current logic)
   for (uint8_t i = 0; i < NUM_TASKS; i++)
   {
-    bool pending;
-    uint16_t due;
-
-    ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
+    if (taskList[i].isPending)
     {
-      pending = taskList[i].isPending;
-      due = taskList[i].timeDue;
-    }
-
-    if (pending)
-    {
-      if (!foundTask || (int16_t)(due - nextTime) < 0)
+      if (!foundTask || (int16_t)(taskList[i].timeDue - nextTime) < 0)
       {
-        nextTime = due;
+        nextTime = taskList[i].timeDue;
         foundTask = true;
       }
     }
   }
 
-  // Set compare register to next task time or disable interrupt if no tasks
   if (foundTask)
   {
-    // If the next task is already due (or overdue), don't program CMP into the past.
-    // Instead, wake ASAP on the next tick so the main loop can run the due task.
-    if ((int16_t)(nextTime - now) <= 0)
+    // 2. Wait for the RTC to be ready for a new command.
+    // If we write while RTC.STATUS is busy, the write might be ignored.
+    while (RTC.STATUS)
+      ;
+
+    ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
     {
-      RTC.CMP = now + 1;
+      // 3. The Race Condition Fix:
+      // Check current time AGAIN inside the atomic block.
+      uint16_t now = RTC.CNT;
+
+      if ((int16_t)(nextTime - now) <= 0)
+      {
+        RTC.CMP = now + 1; // Deadline passed; wake up on next tick.
+      }
+      else
+      {
+        RTC.CMP = nextTime;
+      }
+
+      // 4. Clear any stale interrupt flags and enable the interrupt
+      RTC.INTFLAGS = RTC_CMP_bm;
+      RTC.INTCTRL = RTC_CMP_bm;
     }
-    else
-    {
-      RTC.CMP = nextTime;
-    }
-    RTC.INTCTRL = RTC_CMP_bm; // Enable compare interrupt
   }
   else
   {
-    RTC.INTCTRL = 0; // No tasks pending - disable compare interrupt
+    while (RTC.STATUS)
+      ;
+    RTC.INTCTRL = 0;
   }
+
+  while (RTC.STATUS)
+    ;
 }
 
 static void haptic_trigger(void)
@@ -364,22 +354,22 @@ static void haptic_trigger(void)
   i2c_shutdown();
 }
 
-void statusLedOn(void)
+static void statusLedOn(void)
 {
   PORTA.OUTCLR = LED_STATUS_PIN; // Active low
 }
 
-void statusLedOff(void)
+static void statusLedOff(void)
 {
   PORTA.OUTSET = LED_STATUS_PIN;
 }
 
-void outputOnTask(void)
+static void outputOnTask(void)
 {
   if (!isPlaying)
     return;
 
-  haptic_trigger();
+  // haptic_trigger();
 
   statusLedOn();
 
@@ -389,19 +379,17 @@ void outputOnTask(void)
   scheduleTask(TASK_OUTPUT_ON, ticksPerBeat);
 }
 
-void outputOffTask(void)
+static void outputOffTask(void)
 {
   // Put DRV2605L into standby mode after waveform completes (Step 7 from datasheet)
-  init_i2c();
-  i2c_write_reg_u8(DRV2605L_ADDR, DRV2605L_REG_MODE, 0x40); // Set STANDBY bit
-  i2c_shutdown();
+  // init_i2c();
+  // i2c_write_reg_u8(DRV2605L_ADDR, DRV2605L_REG_MODE, 0x40); // Set STANDBY bit
+  // i2c_shutdown();
 
   statusLedOff();
 }
 
-// Update LED display based on current BPM (scaled binary representation)
-// LEDs are active low: LOW = on, HIGH = off
-void ledOnTask(void)
+static void ledOnTask(void)
 {
   // Scale BPM by 5: display_value = BPM / 5
   uint8_t scaled = bpm / 5;
@@ -416,14 +404,14 @@ void ledOnTask(void)
   (scaled & 0x10) ? (PORTB.OUTCLR = LED_MSB_PIN) : (PORTB.OUTSET = LED_MSB_PIN);
 }
 
-void ledOffTask(void)
+static void ledOffTask(void)
 {
   // Turn off all LEDs (active low - set HIGH)
   PORTA.OUTSET = LED_LSB_PIN | LED_BIT1_PIN | LED_BIT2_PIN;
   PORTB.OUTSET = LED_MSB_PIN | LED_BIT3_PIN;
 }
 
-void button1DebounceTask(void)
+static void button1DebounceTask(void)
 {
   if (!(PORTC.IN & BUTTON1_PIN))
   {
@@ -437,34 +425,25 @@ void button1DebounceTask(void)
       bpm = BPM_MIN;
     }
 
-    // Update LED display and schedule turn off
     ledOnTask();
     scheduleTask(TASK_LED_OFF, LED_ON_DURATION);
   }
 }
 
-void button2DebounceTask(void)
+static void button2DebounceTask(void)
 {
-  // Read button state after debounce delay
   if (!(PORTC.IN & BUTTON2_PIN))
   {
-    // Button still pressed - valid press
-    // Toggle play/pause state
     isPlaying = !isPlaying;
 
     if (isPlaying)
     {
-      // Starting playback - schedule first beat immediately
-      scheduleTask(TASK_OUTPUT_ON, 0);
-
-      // Update LED display and schedule turn off
+      outputOnTask();
       ledOnTask();
       scheduleTask(TASK_LED_OFF, LED_ON_DURATION);
     }
     else
     {
-      // Pausing - full shutdown
-
       // Cancel all pending tasks
       for (uint8_t i = 0; i < NUM_TASKS; i++)
       {
@@ -473,12 +452,11 @@ void button2DebounceTask(void)
 
       ledOffTask();
       outputOffTask();
-      // RTC.INTCTRL = 0;
     }
   }
 }
 
-void button3DebounceTask(void)
+static void button3DebounceTask(void)
 {
   if (!(PORTC.IN & BUTTON3_PIN))
   {
@@ -492,7 +470,6 @@ void button3DebounceTask(void)
       bpm = BPM_MAX;
     }
 
-    // Update LED display and schedule turn off
     ledOnTask();
     scheduleTask(TASK_LED_OFF, LED_ON_DURATION);
   }
@@ -501,17 +478,10 @@ void button3DebounceTask(void)
 ISR(RTC_CNT_vect)
 {
   RTC.INTFLAGS = RTC_CMP_bm;
-  // PORTC_DIRSET = PIN0_bm;
-  // PORTC_OUTCLR = PIN0_bm;
 }
 
 ISR(PORTC_PORT_vect)
 {
-  // while (RTC.STATUS > 0)
-  // {
-  //   PORTC_DIRSET = PIN0_bm;
-  //   PORTC_OUTCLR = PIN0_bm;
-  // }
   uint8_t flags = PORTC.INTFLAGS;
   PORTC.INTFLAGS = flags;
 
@@ -544,10 +514,14 @@ int main(void)
 
   while (1)
   {
+    while (RTC.STATUS > 0)
+      ;
+
     processTasks();
 
     prepareNextWakeup();
 
+    enterSleepStandby();
     // if (isPlaying)
     // {
     //   enterSleepStandby();
