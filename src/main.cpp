@@ -54,11 +54,11 @@
 #define LED_LSB_PIN PIN5_bm  // PA5 - LSB (bit 0)
 
 // Timing constants (in RTC ticks at 1024Hz, 1 tick = 1ms)
-#define DEBOUNCE_DELAY 50
+#define DEBOUNCE_DELAY 20
 #define LED_ON_DURATION 500
 #define HAPTIC_DURATION 75 // strong click waveform duration + safety margin
 #define BPM_INCREMENT 5
-#define BPM_MIN 40
+#define BPM_MIN 5
 #define BPM_MAX 155
 
 // DRV2605L I2C address and registers
@@ -219,9 +219,9 @@ static void init_buttons(void)
 {
   // Configure PC1, PC2, PC3 as inputs with pull-ups
   PORTC.DIRCLR = BUTTON1_PIN | BUTTON2_PIN | BUTTON3_PIN;
-  PORTC.PIN1CTRL = PORT_PULLUPEN_bm | PORT_ISC_FALLING_gc;
-  PORTC.PIN2CTRL = PORT_PULLUPEN_bm | PORT_ISC_FALLING_gc;
-  PORTC.PIN3CTRL = PORT_PULLUPEN_bm | PORT_ISC_FALLING_gc;
+  PORTC.PIN1CTRL = PORT_PULLUPEN_bm | PORT_ISC_INTDISABLE_gc;
+  PORTC.PIN2CTRL = PORT_PULLUPEN_bm | PORT_ISC_BOTHEDGES_gc;
+  PORTC.PIN3CTRL = PORT_PULLUPEN_bm | PORT_ISC_INTDISABLE_gc;
 }
 
 static void init_leds(void)
@@ -384,7 +384,6 @@ static void button1DebounceTask(void)
 {
   if (!(PORTC.IN & BUTTON1_PIN))
   {
-    // Button 2 action - decrease BPM
     if (bpm >= BPM_MIN + BPM_INCREMENT)
     {
       bpm -= BPM_INCREMENT;
@@ -396,6 +395,7 @@ static void button1DebounceTask(void)
 
     ledOnTask();
     scheduleTask(TASK_LED_OFF, LED_ON_DURATION);
+    PORTC.PIN1CTRL = PORT_PULLUPEN_bm | PORT_ISC_BOTHEDGES_gc;
   }
 }
 
@@ -404,12 +404,13 @@ static void button2DebounceTask(void)
   if (!(PORTC.IN & BUTTON2_PIN))
   {
     isPlaying = !isPlaying;
-
     if (isPlaying)
     {
       outputOnTask();
       ledOnTask();
       scheduleTask(TASK_LED_OFF, LED_ON_DURATION);
+      PORTC.PIN1CTRL = PORT_PULLUPEN_bm | PORT_ISC_BOTHEDGES_gc;
+      PORTC.PIN3CTRL = PORT_PULLUPEN_bm | PORT_ISC_BOTHEDGES_gc;
     }
     else
     {
@@ -417,10 +418,12 @@ static void button2DebounceTask(void)
       {
         taskList[i].isPending = false;
       }
-
       outputOffTask();
       ledOffTask();
+      PORTC.PIN1CTRL = PORT_PULLUPEN_bm | PORT_ISC_INTDISABLE_gc;
+      PORTC.PIN3CTRL = PORT_PULLUPEN_bm | PORT_ISC_INTDISABLE_gc;
     }
+    PORTC.PIN2CTRL = PORT_PULLUPEN_bm | PORT_ISC_BOTHEDGES_gc;
   }
 }
 
@@ -428,7 +431,6 @@ static void button3DebounceTask(void)
 {
   if (!(PORTC.IN & BUTTON3_PIN))
   {
-    // Button 3 action - increase BPM
     if (bpm <= BPM_MAX - BPM_INCREMENT)
     {
       bpm += BPM_INCREMENT;
@@ -440,6 +442,7 @@ static void button3DebounceTask(void)
 
     ledOnTask();
     scheduleTask(TASK_LED_OFF, LED_ON_DURATION);
+    PORTC.PIN3CTRL = PORT_PULLUPEN_bm | PORT_ISC_BOTHEDGES_gc;
   }
 }
 
@@ -453,16 +456,19 @@ ISR(PORTC_PORT_vect)
   uint8_t flags = PORTC.INTFLAGS;
   PORTC.INTFLAGS = flags;
 
-  if ((flags & BUTTON1_PIN) && !taskList[TASK_BUTTON1_DEBOUNCE].isPending)
+  if ((flags & BUTTON1_PIN) && !(PORTC.IN & BUTTON1_PIN) && !taskList[TASK_BUTTON1_DEBOUNCE].isPending && isPlaying)
   {
+    PORTC.PIN1CTRL = PORT_PULLUPEN_bm | PORT_ISC_INTDISABLE_gc;
     scheduleTask(TASK_BUTTON1_DEBOUNCE, DEBOUNCE_DELAY);
   }
-  if ((flags & BUTTON2_PIN) && !taskList[TASK_BUTTON2_DEBOUNCE].isPending)
+  if ((flags & BUTTON2_PIN) && !(PORTC.IN & BUTTON2_PIN) && !taskList[TASK_BUTTON2_DEBOUNCE].isPending)
   {
+    PORTC.PIN2CTRL = PORT_PULLUPEN_bm | PORT_ISC_INTDISABLE_gc;
     scheduleTask(TASK_BUTTON2_DEBOUNCE, DEBOUNCE_DELAY);
   }
-  if ((flags & BUTTON3_PIN) && !taskList[TASK_BUTTON3_DEBOUNCE].isPending)
+  if ((flags & BUTTON3_PIN) && !(PORTC.IN & BUTTON3_PIN) && !taskList[TASK_BUTTON3_DEBOUNCE].isPending && isPlaying)
   {
+    PORTC.PIN3CTRL = PORT_PULLUPEN_bm | PORT_ISC_INTDISABLE_gc;
     scheduleTask(TASK_BUTTON3_DEBOUNCE, DEBOUNCE_DELAY);
   }
 }
