@@ -192,33 +192,27 @@ static void init_rtc(void)
   while (RTC.STATUS > 0)
     ;
 
-  // Disable RTC before configuration (required for CLKSEL change)
-  RTC.CTRLA = 0;
+  RTC.CTRLA = 0; // Disable RTC before configuration (required for CLKSEL change)
 
   while (RTC.STATUS > 0)
     ;
 
-  // Select 1.024kHz internal oscillator (must be done while RTC disabled)
-  RTC.CLKSEL = RTC_CLKSEL_INT1K_gc;
+  RTC.CLKSEL = RTC_CLKSEL_INT1K_gc; // Select 1.024kHz internal oscillator (must be done while RTC disabled)
 
   while (RTC.STATUS > 0)
     ;
 
-  // Clear any pending interrupt flags
   RTC.INTFLAGS = RTC_OVF_bm | RTC_CMP_bm;
 
   while (RTC.STATUS > 0)
     ;
 
-  // Configure RTC: Prescaler DIV1 for 1024Hz (1.024kHz / 1 = 1.024kHz, ~0.977ms per tick)
-  // Enable RTC and set RUNSTDBY to keep running in sleep
-  RTC.CTRLA = RTC_PRESCALER_DIV1_gc | RTC_RTCEN_bm | RTC_RUNSTDBY_bm;
+  RTC.CTRLA = RTC_PRESCALER_DIV1_gc | RTC_RTCEN_bm | RTC_RUNSTDBY_bm; // DIV1 for 1024Hz (1.024kHz / 1 = 1.024kHz, ~0.977ms per tick)
 
   while (RTC.STATUS > 0)
     ;
 
-  // Don't enable compare interrupt yet; the scheduler arms it when tasks exist
-  RTC.INTCTRL = 0;
+  RTC.INTCTRL = RTC_CMP_bm; // Enable compare interrupt
 }
 
 static void init_buttons(void)
@@ -241,63 +235,19 @@ static void init_leds(void)
   PORTB.OUTSET = LED_MSB_PIN | LED_BIT3_PIN; // Start HIGH (LEDs off - active low)
 }
 
-static void enableRTC(void)
+static void enterSleep(void)
 {
-  while (RTC.STATUS > 0)
-    ;
-
-  RTC.CTRLA = RTC_PRESCALER_DIV1_gc | RTC_RTCEN_bm | RTC_RUNSTDBY_bm;
-
-  while (RTC.STATUS > 0)
-    ;
-}
-
-static void checkRTC(void)
-{
-  uint16_t count1 = RTC.CNT;
-  _delay_ms(2);
-  uint16_t count2 = RTC.CNT;
-
-  if (count2 > count1)
-  {
-    // RTC survived and is running
-  }
-  else
-  {
-    debugLedOn();
-  }
-}
-
-static void enterSleepStandby(void)
-{
-  set_sleep_mode(SLEEP_MODE_STANDBY); // Deepest sleep with RTC running (if enabled)
-  cli();                              // Disable interrupts
-  sleep_enable();                     // Enable sleep mode
-  sei();                              // Re-enable interrupts
-  sleep_cpu();                        // Sleep with interrupts enabled (atomic operation)
-  sleep_disable();                    // Disable sleep mode after waking
-}
-
-static void enterSleepShutdown(void)
-{
-  set_sleep_mode(SLEEP_MODE_PWR_DOWN); // RTC off (cannot enable it)
-  cli();                               // Disable interrupts
-  sleep_enable();                      // Enable sleep mode
-  sei();                               // Re-enable interrupts
-  sleep_cpu();                         // Sleep with interrupts enabled (atomic operation)
-  sleep_disable();                     // Disable sleep mode after waking
+  cli();           // Disable interrupts
+  sleep_enable();  // Enable sleep mode
+  sei();           // Re-enable interrupts
+  sleep_cpu();     // Sleep with interrupts enabled (atomic operation)
+  sleep_disable(); // Disable sleep mode after waking
 }
 
 static void scheduleTask(uint8_t taskIndex, uint16_t delayTicks)
 {
-  uint16_t now = RTC.CNT;
-  uint16_t due = now + delayTicks;
-
-  ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
-  {
-    taskList[taskIndex].timeDue = due;
-    taskList[taskIndex].isPending = true;
-  }
+  taskList[taskIndex].timeDue = RTC.CNT + delayTicks;
+  taskList[taskIndex].isPending = true;
 }
 
 static void processTasks(void)
@@ -357,12 +307,6 @@ static void prepareNextWakeup(void)
     {
       RTC.CMP = nextTime;
     }
-
-    RTC.INTCTRL = RTC_CMP_bm;
-  }
-  else
-  {
-    RTC.INTCTRL = 0;
   }
 }
 
@@ -469,7 +413,6 @@ static void button2DebounceTask(void)
     }
     else
     {
-      // Cancel all pending tasks
       for (uint8_t i = 0; i < NUM_TASKS; i++)
       {
         taskList[i].isPending = false;
@@ -510,7 +453,6 @@ ISR(PORTC_PORT_vect)
   uint8_t flags = PORTC.INTFLAGS;
   PORTC.INTFLAGS = flags;
 
-  // Only schedule if not already pending (prevents bounce rescheduling)
   if ((flags & BUTTON1_PIN) && !taskList[TASK_BUTTON1_DEBOUNCE].isPending)
   {
     scheduleTask(TASK_BUTTON1_DEBOUNCE, DEBOUNCE_DELAY);
@@ -540,16 +482,10 @@ int main(void)
   {
     processTasks();
     prepareNextWakeup();
-    enterSleepStandby();
-    // if (isPlaying)
-    // {
-    //   enterSleepStandby();
-    // }
-    // else
-    // {
-    //   enterSleepShutdown();
-    //   // checkRTC();
-    // }
+    set_sleep_mode((isPlaying || taskList[TASK_BUTTON2_DEBOUNCE].isPending)
+                       ? SLEEP_MODE_STANDBY
+                       : SLEEP_MODE_PWR_DOWN);
+    enterSleep();
   }
 
   return 0;
