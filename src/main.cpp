@@ -116,13 +116,6 @@ Task taskList[NUM_TASKS];
 volatile uint8_t bpm = 60;       // Default BPM
 volatile bool isPlaying = false; // Play/pause state
 
-static void outputOnTask(void);
-static void outputOffTask(void);
-static void ledOffTask(void);
-static void button1DebounceTask(void);
-static void button2DebounceTask(void);
-static void button3DebounceTask(void);
-
 static void debugLedOn(void)
 {
   // delete before final code commits
@@ -137,33 +130,11 @@ static void debugLedOff(void)
   PORTC.OUTSET = PIN0_bm;
 }
 
-static void init_tasks(void)
-{
-  taskList[TASK_OUTPUT_ON].callback = outputOnTask;
-  taskList[TASK_OUTPUT_ON].isPending = false;
-
-  taskList[TASK_OUTPUT_OFF].callback = outputOffTask;
-  taskList[TASK_OUTPUT_OFF].isPending = false;
-
-  taskList[TASK_LED_OFF].callback = ledOffTask;
-  taskList[TASK_LED_OFF].isPending = false;
-
-  taskList[TASK_BUTTON1_DEBOUNCE].callback = button1DebounceTask;
-  taskList[TASK_BUTTON1_DEBOUNCE].isPending = false;
-
-  taskList[TASK_BUTTON2_DEBOUNCE].callback = button2DebounceTask;
-  taskList[TASK_BUTTON2_DEBOUNCE].isPending = false;
-
-  taskList[TASK_BUTTON3_DEBOUNCE].callback = button3DebounceTask;
-  taskList[TASK_BUTTON3_DEBOUNCE].isPending = false;
-}
-
 static void init_clock(void)
 {
-  // Enable prescaler with div 4 for 4MHz (16MHz / 4)
-  // PDIV = 0x1 (div 4), PEN = 1 (enable prescaler)
-  // Requires Configuration Change Protection (CCP) write
-  _PROTECTED_WRITE(CLKCTRL.MCLKCTRLB, (0x1 << 1) | 0x01);
+  // Prescaler DIV4 for 4MHz (16MHz / 4)
+  // PDIV = 1 (divide by 2^(PDIV+1) = 2^2 = 4), PEN = 1 (enable)
+  _PROTECTED_WRITE(CLKCTRL.MCLKCTRLB, (1 << CLKCTRL_PDIV_gp) | CLKCTRL_PEN_bm);
 }
 
 static bool try_init_haptic_driver_erm(void)
@@ -289,31 +260,27 @@ static void init_haptic_driver(void)
   }
 }
 
-static void init_rtc(void)
+static inline void rtc_wait_ready(void)
 {
   while (RTC.STATUS > 0)
     ;
+}
 
+static void init_rtc(void)
+{
+  rtc_wait_ready();
   RTC.CTRLA = 0; // Disable RTC before configuration (required for CLKSEL change)
 
-  while (RTC.STATUS > 0)
-    ;
-
+  rtc_wait_ready();
   RTC.CLKSEL = RTC_CLKSEL_INT1K_gc; // Select 1.024kHz internal oscillator (must be done while RTC disabled)
 
-  while (RTC.STATUS > 0)
-    ;
-
+  rtc_wait_ready();
   RTC.INTFLAGS = RTC_OVF_bm | RTC_CMP_bm;
 
-  while (RTC.STATUS > 0)
-    ;
-
+  rtc_wait_ready();
   RTC.CTRLA = RTC_PRESCALER_DIV1_gc | RTC_RTCEN_bm | RTC_RUNSTDBY_bm; // DIV1 for 1024Hz (1.024kHz / 1 = 1.024kHz, ~0.977ms per tick)
 
-  while (RTC.STATUS > 0)
-    ;
-
+  rtc_wait_ready();
   RTC.INTCTRL = RTC_CMP_bm; // Enable compare interrupt
 }
 
@@ -373,9 +340,7 @@ static void scheduleTask(uint8_t taskIndex, uint16_t delayTicks)
 
 static void processTasks(void)
 {
-  // this is critical to wait for RTC to be ready
-  while (RTC.STATUS > 0)
-    ;
+  rtc_wait_ready(); // this is critical to wait for RTC to be ready
 
   uint16_t now = RTC.CNT;
 
@@ -392,7 +357,7 @@ static void processTasks(void)
       }
     }
 
-    if (shouldRun && taskList[i].callback != 0)
+    if (shouldRun)
     {
       taskList[i].callback();
     }
@@ -404,25 +369,29 @@ static void prepareNextWakeup(void)
   uint16_t nextTime = 0xFFFF;
   bool foundTask = false;
 
-  for (uint8_t i = 0; i < NUM_TASKS; i++)
+  ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
   {
-    if (taskList[i].isPending)
+    for (uint8_t i = 0; i < NUM_TASKS; i++)
     {
-      if (!foundTask || (int16_t)(taskList[i].timeDue - nextTime) < 0)
+      if (taskList[i].isPending)
       {
-        nextTime = taskList[i].timeDue;
-        foundTask = true;
+        if (!foundTask || (int16_t)(taskList[i].timeDue - nextTime) < 0)
+        {
+          nextTime = taskList[i].timeDue;
+          foundTask = true;
+        }
       }
     }
   }
 
   if (foundTask)
   {
+    rtc_wait_ready();
     uint16_t now = RTC.CNT;
 
     if ((int16_t)(nextTime - now) <= 0)
     {
-      RTC.CMP = now + 1; // Deadline passed; wake up on next tick.
+      RTC.CMP = now + 1;
     }
     else
     {
@@ -551,6 +520,27 @@ static void button3DebounceTask(void)
     scheduleTask(TASK_LED_OFF, LED_ON_DURATION);
   }
   PORTC.PIN3CTRL = PORT_PULLUPEN_bm | PORT_ISC_BOTHEDGES_gc;
+}
+
+static void init_tasks(void)
+{
+  taskList[TASK_OUTPUT_ON].callback = outputOnTask;
+  taskList[TASK_OUTPUT_ON].isPending = false;
+
+  taskList[TASK_OUTPUT_OFF].callback = outputOffTask;
+  taskList[TASK_OUTPUT_OFF].isPending = false;
+
+  taskList[TASK_LED_OFF].callback = ledOffTask;
+  taskList[TASK_LED_OFF].isPending = false;
+
+  taskList[TASK_BUTTON1_DEBOUNCE].callback = button1DebounceTask;
+  taskList[TASK_BUTTON1_DEBOUNCE].isPending = false;
+
+  taskList[TASK_BUTTON2_DEBOUNCE].callback = button2DebounceTask;
+  taskList[TASK_BUTTON2_DEBOUNCE].isPending = false;
+
+  taskList[TASK_BUTTON3_DEBOUNCE].callback = button3DebounceTask;
+  taskList[TASK_BUTTON3_DEBOUNCE].isPending = false;
 }
 
 ISR(RTC_CNT_vect)
