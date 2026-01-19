@@ -38,6 +38,10 @@
    Free: 6 pins (PA1-PA3, PB2-PB3, PC0)
    ============================================================================ */
 
+// Macros
+#define MIN(a, b) ((a) < (b) ? (a) : (b))
+#define MAX(a, b) ((a) > (b) ? (a) : (b))
+
 // Button pins on Port C
 #define BUTTON1_PIN PIN1_bm // PC1 - Decrease BPM
 #define BUTTON2_PIN PIN2_bm // PC2 - Play/Pause
@@ -54,24 +58,39 @@
 #define LED_LSB_PIN PIN5_bm  // PA5 - LSB (bit 0)
 
 // Timing constants (in RTC ticks at 1024Hz, 1 tick = 1ms)
-#define DEBOUNCE_DELAY 20
+#define DEBOUNCE_DELAY 30
 #define LED_ON_DURATION 500
-#define HAPTIC_DURATION 75 // strong click waveform duration + safety margin
+#define HAPTIC_DURATION 100
 #define BPM_INCREMENT 5
 #define BPM_MIN 5
 #define BPM_MAX 155
 
-// DRV2605L I2C address and registers
+// DRV2605L Register Addresses
 #define DRV2605L_ADDR 0x5A
 #define DRV2605L_REG_STATUS 0x00
 #define DRV2605L_REG_MODE 0x01
 #define DRV2605L_REG_RTPIN 0x02
 #define DRV2605L_REG_LIBRARY 0x03
 #define DRV2605L_REG_WAVESEQ1 0x04
+#define DRV2605L_REG_WAVESEQ2 0x05
+#define DRV2605L_REG_WAVESEQ3 0x06
+#define DRV2605L_REG_WAVESEQ4 0x07
+#define DRV2605L_REG_WAVESEQ5 0x08
+#define DRV2605L_REG_WAVESEQ6 0x09
+#define DRV2605L_REG_WAVESEQ7 0x0A
+#define DRV2605L_REG_WAVESEQ8 0x0B
 #define DRV2605L_REG_GO 0x0C
-#define DRV2605L_REG_FEEDBACK 0x1A
+#define DRV2605L_REG_OVERDRIVE 0x0D
+#define DRV2605L_REG_SUSTAINPOS 0x0E
+#define DRV2605L_REG_SUSTAINNEG 0x0F
+#define DRV2605L_REG_BREAK 0x10
+#define DRV2605L_REG_AUDIOCTRL 0x11
 #define DRV2605L_REG_CONTROL1 0x1B
+#define DRV2605L_REG_CONTROL2 0x1C
 #define DRV2605L_REG_CONTROL3 0x1D
+#define DRV2605L_REG_CONTROL4 0x1E
+#define DRV2605L_REG_CONTROL5 0x1F
+#define DRV2605L_REG_FEEDBACK 0x1A
 
 typedef struct
 {
@@ -147,44 +166,127 @@ static void init_clock(void)
   _PROTECTED_WRITE(CLKCTRL.MCLKCTRLB, (0x1 << 1) | 0x01);
 }
 
+static bool try_init_haptic_driver_erm(void)
+{
+  // Exit standby mode - set MODE to internal trigger (0x00)
+  if (!i2c_write_reg_u8(DRV2605L_ADDR, DRV2605L_REG_MODE, 0x00))
+    return false;
+
+  // Small delay for mode change to take effect
+  _delay_us(100);
+
+  // Select library (Library 1 for ERM - TS2200 motors)
+  // Library options: 1=A (2-3V), 2=B (3V), 3=C (3-5V), 4=D (4-5V), 5=E (5V)
+  if (!i2c_write_reg_u8(DRV2605L_ADDR, DRV2605L_REG_LIBRARY, 0x01))
+    return false;
+
+  // Configure feedback control for ERM mode
+  // Bit 7 = 0 (ERM mode), Bit 6 = 0 (4x brake factor), Bit 1-0 = medium gain
+  if (!i2c_write_reg_u8(DRV2605L_ADDR, DRV2605L_REG_FEEDBACK, 0x00))
+    return false;
+
+  // Set Control3 - ERM mode, open loop
+  // Bit 7 = 0 (ERM mode on N_ERM_LRA pin)
+  // Bit 5 = 0 (analog input)
+  // Bit 4 = 1 (supply compensation disable for open loop)
+  // Bit 3 = 0 (data format: signed)
+  // Bits 2-0 = 0 (loop gain = 0 for open loop)
+  if (!i2c_write_reg_u8(DRV2605L_ADDR, DRV2605L_REG_CONTROL3, 0x10))
+    return false;
+
+  // Set Control1 - Drive time for ERM (typically default is fine)
+  // Bit 7-5 = 100 (startup boost)
+  // Bit 4-0 = 10011 (drive time - can use default for ERM)
+  if (!i2c_write_reg_u8(DRV2605L_ADDR, DRV2605L_REG_CONTROL1, 0x93))
+    return false;
+
+  // Set Control2 - Unidirectional for ERM
+  // Bit 3 = 0 (unidirectional input for ERM)
+  if (!i2c_write_reg_u8(DRV2605L_ADDR, DRV2605L_REG_CONTROL2, 0x00))
+    return false;
+
+  // Load default waveform: Strong Click 100% (effect 1)
+  if (!i2c_write_reg_u8(DRV2605L_ADDR, DRV2605L_REG_WAVESEQ1, 0x01))
+    return false;
+  // End sequence
+  if (!i2c_write_reg_u8(DRV2605L_ADDR, DRV2605L_REG_WAVESEQ1 + 1, 0x00))
+    return false;
+
+  // Enter standby mode for low power consumption
+  if (!i2c_write_reg_u8(DRV2605L_ADDR, DRV2605L_REG_MODE, 0x40))
+    return false;
+
+  return true;
+}
+
+static bool try_init_haptic_driver(void)
+{
+  // Exit standby mode - set MODE to internal trigger (0x00)
+  if (!i2c_write_reg_u8(DRV2605L_ADDR, DRV2605L_REG_MODE, 0x00))
+    return false;
+
+  // Small delay for mode change to take effect
+  _delay_us(100);
+
+  // Select library (Library 6 for LRA strong click)
+  if (!i2c_write_reg_u8(DRV2605L_ADDR, DRV2605L_REG_LIBRARY, 0x06))
+    return false;
+
+  // Configure feedback control for LRA mode
+  // Bit 7 = 1 (LRA mode), Bit 6 = 0 (4x brake factor)
+  if (!i2c_write_reg_u8(DRV2605L_ADDR, DRV2605L_REG_FEEDBACK, 0x80))
+    return false;
+
+  // Set Control3 - LRA mode, open loop
+  // Bit 7 = 1 (LRA mode), Bit 4 = 1 (supply comp disable), Bits 2-0 = 0 (open loop)
+  if (!i2c_write_reg_u8(DRV2605L_ADDR, DRV2605L_REG_CONTROL3, 0x90))
+    return false;
+
+  // Set Control1 - Drive time for 170Hz LRA + startup boost
+  if (!i2c_write_reg_u8(DRV2605L_ADDR, DRV2605L_REG_CONTROL1, 0x93))
+    return false;
+
+  // Load default waveform: Strong Click 100% (effect 1)
+  if (!i2c_write_reg_u8(DRV2605L_ADDR, DRV2605L_REG_WAVESEQ1, 0x01))
+    return false;
+
+  // End sequence
+  if (!i2c_write_reg_u8(DRV2605L_ADDR, DRV2605L_REG_WAVESEQ1 + 1, 0x00))
+    return false;
+
+  // Enter standby mode for low power
+  if (!i2c_write_reg_u8(DRV2605L_ADDR, DRV2605L_REG_MODE, 0x40))
+    return false;
+
+  return true;
+}
+
 static void init_haptic_driver(void)
 {
-  // Step 1: Wait 250µs after powerup before I2C commands
+  // Wait for DRV2605L power-on settling
   _delay_us(250);
 
-  init_i2c();
+  // Keep trying until initialization succeeds
+  while (1)
+  {
+    // Recover bus and initialize I2C
+    i2c_bus_recovery();
+    init_i2c();
 
-  // Step 3: Exit standby mode - set MODE to internal trigger (0x00)
-  i2c_write_reg_u8(DRV2605L_ADDR, DRV2605L_REG_MODE, 0x00);
+    // Try to configure the device
+    if (try_init_haptic_driver_erm())
+    {
+      // Success! Clean up and exit
+      i2c_shutdown();
+      break;
+    }
 
-  // Step 4-5: Skip auto-calibration (using open-loop mode)
+    // Failed - clean up before retry
+    i2c_shutdown();
 
-  // Step 6: Select library (Library 6 for LRA strong click)
-  i2c_write_reg_u8(DRV2605L_ADDR, DRV2605L_REG_LIBRARY, 0x06);
-
-  // Step 7: Configure control registers for LRA open-loop mode
-
-  // Set feedback control for LRA mode
-  i2c_write_reg_u8(DRV2605L_ADDR, DRV2605L_REG_FEEDBACK, 0x80); // LRA mode (bit 7 = 1)
-
-  // Set Control3: LRA mode, open loop, strong braking
-  // Bit 7 = 1 (LRA), Bit 4 = 1 (supply compensation disable for open loop)
-  // Bits 2-0 = 0 (open loop, loop gain = 0)
-  i2c_write_reg_u8(DRV2605L_ADDR, DRV2605L_REG_CONTROL3, 0x90);
-
-  // Set Control1: Drive time for 170Hz LRA
-  // Drive time = (1 / (2 * 170Hz)) = 2.94ms ≈ 3ms
-  // Drive time register = (time_ms - 0.5) / 0.1 = (3 - 0.5) / 0.1 = 25 = 0x19
-  i2c_write_reg_u8(DRV2605L_ADDR, DRV2605L_REG_CONTROL1, 0x93); // Drive time + startup boost
-
-  // Load waveform sequencer: Strong Click 100% (effect 1)
-  i2c_write_reg_u8(DRV2605L_ADDR, DRV2605L_REG_WAVESEQ1, 0x01);     // Strong click
-  i2c_write_reg_u8(DRV2605L_ADDR, DRV2605L_REG_WAVESEQ1 + 1, 0x00); // End sequence
-
-  // Step 8: Put device in standby mode for low power
-  i2c_write_reg_u8(DRV2605L_ADDR, DRV2605L_REG_MODE, 0x40); // Set STANDBY bit
-
-  i2c_shutdown();
+    // Wait before retry to avoid hammering the bus
+    _delay_ms(10);
+  }
 }
 
 static void init_rtc(void)
@@ -213,6 +315,25 @@ static void init_rtc(void)
     ;
 
   RTC.INTCTRL = RTC_CMP_bm; // Enable compare interrupt
+}
+
+static void init_all_pins_low_power(void)
+{
+  // Set all pins as outputs driving low
+  PORTA.DIRSET = 0xFF;
+  PORTA.OUTCLR = 0xFF;
+  PORTB.DIRSET = 0xFF;
+  PORTB.OUTCLR = 0xFF;
+  PORTC.DIRSET = 0xFF;
+  PORTC.OUTCLR = 0xFF;
+
+  // Disable input buffers on all pins
+  for (uint8_t i = 0; i < 8; i++)
+  {
+    (&PORTA.PIN0CTRL)[i] = PORT_ISC_INPUT_DISABLE_gc;
+    (&PORTB.PIN0CTRL)[i] = PORT_ISC_INPUT_DISABLE_gc;
+    (&PORTC.PIN0CTRL)[i] = PORT_ISC_INPUT_DISABLE_gc;
+  }
 }
 
 static void init_buttons(void)
@@ -313,13 +434,16 @@ static void prepareNextWakeup(void)
 static void haptic_trigger(void)
 {
   init_i2c();
-
-  // Exit standby mode if device was in standby (Step 3 from datasheet)
   i2c_write_reg_u8(DRV2605L_ADDR, DRV2605L_REG_MODE, 0x00);
+  _delay_us(250);                                         // Wait for device to exit standby before sending GO command
+  i2c_write_reg_u8(DRV2605L_ADDR, DRV2605L_REG_GO, 0x01); // Send GO command to trigger waveform playback
+  i2c_shutdown();
+}
 
-  // Send GO command to trigger waveform playback (Step 5 from datasheet)
-  i2c_write_reg_u8(DRV2605L_ADDR, DRV2605L_REG_GO, 0x01);
-
+static void haptic_standby(void)
+{
+  init_i2c();
+  i2c_write_reg_u8(DRV2605L_ADDR, DRV2605L_REG_MODE, 0x40); // Enter standby mode
   i2c_shutdown();
 }
 
@@ -350,10 +474,7 @@ static void outputOnTask(void)
 
 static void outputOffTask(void)
 {
-  // Put DRV2605L into standby mode after waveform completes (Step 7 from datasheet)
-  init_i2c();
-  i2c_write_reg_u8(DRV2605L_ADDR, DRV2605L_REG_MODE, 0x40); // Set STANDBY bit
-  i2c_shutdown();
+  haptic_standby();
 
   statusLedOff();
 }
@@ -384,19 +505,12 @@ static void button1DebounceTask(void)
 {
   if (!(PORTC.IN & BUTTON1_PIN))
   {
-    if (bpm >= BPM_MIN + BPM_INCREMENT)
-    {
-      bpm -= BPM_INCREMENT;
-    }
-    else
-    {
-      bpm = BPM_MIN;
-    }
+    bpm = MAX(bpm - BPM_INCREMENT, BPM_MIN);
 
     ledOnTask();
     scheduleTask(TASK_LED_OFF, LED_ON_DURATION);
-    PORTC.PIN1CTRL = PORT_PULLUPEN_bm | PORT_ISC_BOTHEDGES_gc;
   }
+  PORTC.PIN1CTRL = PORT_PULLUPEN_bm | PORT_ISC_BOTHEDGES_gc;
 }
 
 static void button2DebounceTask(void)
@@ -423,27 +537,20 @@ static void button2DebounceTask(void)
       PORTC.PIN1CTRL = PORT_PULLUPEN_bm | PORT_ISC_INTDISABLE_gc;
       PORTC.PIN3CTRL = PORT_PULLUPEN_bm | PORT_ISC_INTDISABLE_gc;
     }
-    PORTC.PIN2CTRL = PORT_PULLUPEN_bm | PORT_ISC_BOTHEDGES_gc;
   }
+  PORTC.PIN2CTRL = PORT_PULLUPEN_bm | PORT_ISC_BOTHEDGES_gc;
 }
 
 static void button3DebounceTask(void)
 {
   if (!(PORTC.IN & BUTTON3_PIN))
   {
-    if (bpm <= BPM_MAX - BPM_INCREMENT)
-    {
-      bpm += BPM_INCREMENT;
-    }
-    else
-    {
-      bpm = BPM_MAX;
-    }
+    bpm = MIN(bpm + BPM_INCREMENT, BPM_MAX);
 
     ledOnTask();
     scheduleTask(TASK_LED_OFF, LED_ON_DURATION);
-    PORTC.PIN3CTRL = PORT_PULLUPEN_bm | PORT_ISC_BOTHEDGES_gc;
   }
+  PORTC.PIN3CTRL = PORT_PULLUPEN_bm | PORT_ISC_BOTHEDGES_gc;
 }
 
 ISR(RTC_CNT_vect)
@@ -477,6 +584,7 @@ int main(void)
 {
   init_clock();
   init_rtc();
+  init_all_pins_low_power();
   init_buttons();
   init_leds();
   init_tasks();

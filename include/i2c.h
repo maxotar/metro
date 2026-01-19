@@ -16,10 +16,19 @@
 // Initialize I2C hardware
 void init_i2c(void);
 
-// Shutdown I2C and disable pullups
+// Shutdown I2C and drive pins low to prevent current through external pullups
 void i2c_shutdown(void);
+
+// Write multiple bytes to I2C device
+bool i2c_write_bytes(uint8_t addr7, const uint8_t *data, uint8_t len);
 
 // Write a single byte to a register
 bool i2c_write_reg_u8(uint8_t addr7, uint8_t reg, uint8_t value);
+
+// Read a single byte from a register
+bool i2c_read_reg_u8(uint8_t addr7, uint8_t reg, uint8_t *value);
+
+// Recover stuck I2C bus by generating clock pulses
+void i2c_bus_recovery(void);
 
 #endif // I2C_H

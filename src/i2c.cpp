@@ -1,5 +1,6 @@
 #include "i2c.h"
 #include <avr/io.h>
+#include <util/delay.h>
 
 // F_CPU must be defined before including this file
 #ifndef F_CPU
@@ -12,6 +13,18 @@ static bool twi_wait(uint8_t mask)
     for (uint16_t i = 0; i < 60000; i++)
     {
         if (TWI0.MSTATUS & mask)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool twi_wait_idle(void)
+{
+    for (uint16_t i = 0; i < 60000; i++)
+    {
+        if (TWI0.MSTATUS & TWI_BUSSTATE_IDLE_gc)
         {
             return true;
         }
@@ -41,77 +54,130 @@ void init_i2c(void)
 
 void i2c_shutdown(void)
 {
-    // Disable TWI master.
     TWI0.MCTRLA = 0;
     TWI0.MCTRLB = 0;
 
-    // Release pins and disable pullups to minimize leakage.
-    I2C_PORT.DIRCLR = I2C_SDA_PIN_bm | I2C_SCL_PIN_bm;
-    I2C_PORT.PIN0CTRL &= (uint8_t)~PORT_PULLUPEN_bm; // SCL
-    I2C_PORT.PIN1CTRL &= (uint8_t)~PORT_PULLUPEN_bm; // SDA
+    I2C_PORT.OUTCLR = I2C_SDA_PIN_bm | I2C_SCL_PIN_bm;
+    I2C_PORT.DIRSET = I2C_SDA_PIN_bm | I2C_SCL_PIN_bm;
+}
+
+bool i2c_write_bytes(uint8_t addr7, const uint8_t *data, uint8_t len)
+{
+    TWI0.MADDR = (addr7 << 1);
+    if (!twi_wait(TWI_WIF_bm))
+        return false;
+    if (TWI0.MSTATUS & (TWI_ARBLOST_bm | TWI_BUSERR_bm | TWI_RXACK_bm))
+    {
+        TWI0.MCTRLB = TWI_MCMD_STOP_gc;
+        twi_wait_idle();
+        return false;
+    }
+
+    for (uint8_t i = 0; i < len; i++)
+    {
+        TWI0.MDATA = data[i];
+        if (!twi_wait(TWI_WIF_bm))
+        {
+            TWI0.MCTRLB = TWI_MCMD_STOP_gc;
+            twi_wait_idle();
+            return false;
+        }
+        if (TWI0.MSTATUS & TWI_RXACK_bm)
+        {
+            TWI0.MCTRLB = TWI_MCMD_STOP_gc;
+            twi_wait_idle();
+            return false;
+        }
+    }
+
+    TWI0.MCTRLB = TWI_MCMD_STOP_gc;
+    twi_wait_idle();
+    return true;
 }
 
 bool i2c_write_reg_u8(uint8_t addr7, uint8_t reg, uint8_t value)
 {
-    // Address + write
+    uint8_t data[2] = {reg, value};
+    return i2c_write_bytes(addr7, data, 2);
+}
+
+bool i2c_read_reg_u8(uint8_t addr7, uint8_t reg, uint8_t *value)
+{
+    // Write register address
     TWI0.MADDR = (uint8_t)(addr7 << 1);
     if (!twi_wait(TWI_WIF_bm))
     {
         TWI0.MCTRLB = TWI_MCMD_STOP_gc;
+        twi_wait_idle();
         return false;
     }
-    // Check for bus errors or arbitration lost
-    if (TWI0.MSTATUS & (TWI_ARBLOST_bm | TWI_BUSERR_bm))
-    {
-        while (!(TWI0.MSTATUS & TWI_BUSSTATE_IDLE_gc))
-            ; // Wait for IDLE
-        return false;
-    }
-    if (TWI0.MSTATUS & TWI_RXACK_bm)
+    if (TWI0.MSTATUS & (TWI_ARBLOST_bm | TWI_BUSERR_bm | TWI_RXACK_bm))
     {
         TWI0.MCTRLB = TWI_MCMD_STOP_gc;
-        while (!(TWI0.MSTATUS & TWI_BUSSTATE_IDLE_gc))
-            ; // Wait for IDLE
+        twi_wait_idle();
         return false;
     }
 
-    // Register
     TWI0.MDATA = reg;
     if (!twi_wait(TWI_WIF_bm))
     {
         TWI0.MCTRLB = TWI_MCMD_STOP_gc;
-        while (!(TWI0.MSTATUS & TWI_BUSSTATE_IDLE_gc))
-            ;
+        twi_wait_idle();
         return false;
     }
     if (TWI0.MSTATUS & TWI_RXACK_bm)
     {
         TWI0.MCTRLB = TWI_MCMD_STOP_gc;
-        while (!(TWI0.MSTATUS & TWI_BUSSTATE_IDLE_gc))
-            ;
+        twi_wait_idle();
         return false;
     }
 
-    // Value
-    TWI0.MDATA = value;
-    if (!twi_wait(TWI_WIF_bm))
+    // Repeated start + read
+    TWI0.MADDR = (uint8_t)((addr7 << 1) | 0x01);
+    if (!twi_wait(TWI_RIF_bm))
     {
         TWI0.MCTRLB = TWI_MCMD_STOP_gc;
-        while (!(TWI0.MSTATUS & TWI_BUSSTATE_IDLE_gc))
-            ;
+        twi_wait_idle();
         return false;
     }
-    if (TWI0.MSTATUS & TWI_RXACK_bm)
+    if (TWI0.MSTATUS & (TWI_ARBLOST_bm | TWI_BUSERR_bm | TWI_RXACK_bm))
     {
         TWI0.MCTRLB = TWI_MCMD_STOP_gc;
-        while (!(TWI0.MSTATUS & TWI_BUSSTATE_IDLE_gc))
-            ;
+        twi_wait_idle();
         return false;
     }
 
-    // Stop
-    TWI0.MCTRLB = TWI_MCMD_STOP_gc;
-    while (!(TWI0.MSTATUS & TWI_BUSSTATE_IDLE_gc))
-        ; // Wait for IDLE
+    // Read byte and NACK
+    *value = TWI0.MDATA;
+    TWI0.MCTRLB = TWI_ACKACT_NACK_gc | TWI_MCMD_STOP_gc;
+    twi_wait_idle();
     return true;
+}
+
+void i2c_bus_recovery(void)
+{
+    // Disable TWI
+    TWI0.MCTRLA = 0;
+
+    // Configure SCL as output
+    I2C_PORT.DIRSET = I2C_SCL_PIN_bm;
+
+    // Generate up to 9 clock pulses
+    for (uint8_t i = 0; i < 9; i++)
+    {
+        I2C_PORT.OUTCLR = I2C_SCL_PIN_bm;
+        _delay_us(5);
+        I2C_PORT.OUTSET = I2C_SCL_PIN_bm;
+        _delay_us(5);
+
+        // Check if SDA released
+        if (I2C_PORT.IN & I2C_SDA_PIN_bm)
+        {
+            break;
+        }
+    }
+
+    // Reconfigure as input and reinitialize
+    I2C_PORT.DIRCLR = I2C_SCL_PIN_bm;
+    init_i2c();
 }
