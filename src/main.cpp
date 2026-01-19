@@ -73,13 +73,11 @@
 #define DRV2605L_REG_CONTROL1 0x1B
 #define DRV2605L_REG_CONTROL3 0x1D
 
-typedef void (*task_callback_t)(void);
-
 typedef struct
 {
   volatile uint16_t timeDue; // Time when task should execute (in RTC ticks)
   volatile bool isPending;   // Set by ISR, cleared after execution
-  task_callback_t callback;  // Function to call
+  void (*callback)(void);
 } Task;
 
 #define NUM_TASKS 6
@@ -105,6 +103,20 @@ static void ledOffTask(void);
 static void button1DebounceTask(void);
 static void button2DebounceTask(void);
 static void button3DebounceTask(void);
+
+static void debugLedOn(void)
+{
+  // delete before final code commits
+  PORTC.DIRSET = PIN0_bm;
+  PORTC.OUTCLR = PIN0_bm;
+}
+
+static void debugLedOff(void)
+{
+  // delete before final code commits
+  PORTC.DIRSET = PIN0_bm;
+  PORTC.OUTSET = PIN0_bm;
+}
 
 static void init_tasks(void)
 {
@@ -229,6 +241,33 @@ static void init_leds(void)
   PORTB.OUTSET = LED_MSB_PIN | LED_BIT3_PIN; // Start HIGH (LEDs off - active low)
 }
 
+static void enableRTC(void)
+{
+  while (RTC.STATUS > 0)
+    ;
+
+  RTC.CTRLA = RTC_PRESCALER_DIV1_gc | RTC_RTCEN_bm | RTC_RUNSTDBY_bm;
+
+  while (RTC.STATUS > 0)
+    ;
+}
+
+static void checkRTC(void)
+{
+  uint16_t count1 = RTC.CNT;
+  _delay_ms(2);
+  uint16_t count2 = RTC.CNT;
+
+  if (count2 > count1)
+  {
+    // RTC survived and is running
+  }
+  else
+  {
+    debugLedOn();
+  }
+}
+
 static void enterSleepStandby(void)
 {
   set_sleep_mode(SLEEP_MODE_STANDBY); // Deepest sleep with RTC running (if enabled)
@@ -263,6 +302,10 @@ static void scheduleTask(uint8_t taskIndex, uint16_t delayTicks)
 
 static void processTasks(void)
 {
+  // this is critical to wait for RTC to be ready
+  while (RTC.STATUS > 0)
+    ;
+
   uint16_t now = RTC.CNT;
 
   for (uint8_t i = 0; i < NUM_TASKS; i++)
@@ -290,7 +333,6 @@ static void prepareNextWakeup(void)
   uint16_t nextTime = 0xFFFF;
   bool foundTask = false;
 
-  // 1. Find the earliest task (same as your current logic)
   for (uint8_t i = 0; i < NUM_TASKS; i++)
   {
     if (taskList[i].isPending)
@@ -305,40 +347,23 @@ static void prepareNextWakeup(void)
 
   if (foundTask)
   {
-    // 2. Wait for the RTC to be ready for a new command.
-    // If we write while RTC.STATUS is busy, the write might be ignored.
-    while (RTC.STATUS)
-      ;
+    uint16_t now = RTC.CNT;
 
-    ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
+    if ((int16_t)(nextTime - now) <= 0)
     {
-      // 3. The Race Condition Fix:
-      // Check current time AGAIN inside the atomic block.
-      uint16_t now = RTC.CNT;
-
-      if ((int16_t)(nextTime - now) <= 0)
-      {
-        RTC.CMP = now + 1; // Deadline passed; wake up on next tick.
-      }
-      else
-      {
-        RTC.CMP = nextTime;
-      }
-
-      // 4. Clear any stale interrupt flags and enable the interrupt
-      RTC.INTFLAGS = RTC_CMP_bm;
-      RTC.INTCTRL = RTC_CMP_bm;
+      RTC.CMP = now + 1; // Deadline passed; wake up on next tick.
     }
+    else
+    {
+      RTC.CMP = nextTime;
+    }
+
+    RTC.INTCTRL = RTC_CMP_bm;
   }
   else
   {
-    while (RTC.STATUS)
-      ;
     RTC.INTCTRL = 0;
   }
-
-  while (RTC.STATUS)
-    ;
 }
 
 static void haptic_trigger(void)
@@ -513,13 +538,8 @@ int main(void)
 
   while (1)
   {
-    while (RTC.STATUS > 0)
-      ;
-
     processTasks();
-
     prepareNextWakeup();
-
     enterSleepStandby();
     // if (isPlaying)
     // {
@@ -528,6 +548,7 @@ int main(void)
     // else
     // {
     //   enterSleepShutdown();
+    //   // checkRTC();
     // }
   }
 
