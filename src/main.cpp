@@ -1,6 +1,7 @@
 #include <avr/io.h>
 #include <avr/interrupt.h>
 #include <avr/sleep.h>
+#include <avr/wdt.h>
 #include <avr/cpufunc.h>
 #include <util/atomic.h>
 #include <util/delay.h>
@@ -268,20 +269,26 @@ static inline void rtc_wait_ready(void)
 
 static void init_rtc(void)
 {
-  rtc_wait_ready();
-  RTC.CTRLA = 0; // Disable RTC before configuration (required for CLKSEL change)
+    // Wait for any previous power-on synchronization to finish
+    rtc_wait_ready();
+    
+    RTC.CTRLA = 0; 
+    rtc_wait_ready(); // MUST wait after disabling before changing CLKSEL
+    
+    RTC.CLKSEL = RTC_CLKSEL_INT1K_gc; 
+    RTC.INTFLAGS = RTC_OVF_bm | RTC_CMP_bm;
+    
+    // Set your metronome's first "tick" interval here
+    RTC.CMP = 100; 
 
-  rtc_wait_ready();
-  RTC.CLKSEL = RTC_CLKSEL_INT1K_gc; // Select 1.024kHz internal oscillator (must be done while RTC disabled)
-
-  rtc_wait_ready();
-  RTC.INTFLAGS = RTC_OVF_bm | RTC_CMP_bm;
-
-  rtc_wait_ready();
-  RTC.CTRLA = RTC_PRESCALER_DIV1_gc | RTC_RTCEN_bm | RTC_RUNSTDBY_bm; // DIV1 for 1024Hz (1.024kHz / 1 = 1.024kHz, ~0.977ms per tick)
-
-  rtc_wait_ready();
-  RTC.INTCTRL = RTC_CMP_bm; // Enable compare interrupt
+    // Now wait once before the final "Enable" to catch all previous writes
+    rtc_wait_ready(); 
+    
+    RTC.CTRLA = RTC_PRESCALER_DIV1_gc | RTC_RTCEN_bm | RTC_RUNSTDBY_bm;
+    RTC.INTCTRL = RTC_CMP_bm; 
+    
+    // Final wait to ensure RTC is actually running before we leave the function
+    rtc_wait_ready();
 }
 
 static void init_all_pins_low_power(void)
@@ -325,11 +332,36 @@ static void init_leds(void)
 
 static void enterSleep(void)
 {
-  cli();           // Disable interrupts
-  sleep_enable();  // Enable sleep mode
-  sei();           // Re-enable interrupts
-  sleep_cpu();     // Sleep with interrupts enabled (atomic operation)
-  sleep_disable(); // Disable sleep mode after waking
+  wdt_reset();
+  _PROTECTED_WRITE(WDT.CTRLA, WDT_PERIOD_OFF_gc); // Disable the Watchdog before sleep
+
+  while (WDT.STATUS & WDT_SYNCBUSY_bm)
+    ;
+
+  cli();
+  sleep_enable();
+  sei();
+  sleep_cpu();
+  sleep_disable();
+
+  /* * WDT Period Options (Based on 1.024kHz internal WDT clock):
+   * WDT_PERIOD_OFF_gc      - Watchdog Disabled
+   * WDT_PERIOD_8CLK_gc     - 8ms timeout
+   * WDT_PERIOD_16CLK_gc    - 16ms timeout
+   * WDT_PERIOD_32CLK_gc    - 32ms timeout
+   * WDT_PERIOD_64CLK_gc    - 64ms timeout
+   * WDT_PERIOD_128CLK_gc   - 128ms timeout
+   * WDT_PERIOD_256CLK_gc   - 256ms timeout
+   * WDT_PERIOD_512CLK_gc   - 512ms timeout
+   * WDT_PERIOD_1KCLK_gc    - 1024ms (~1.0s)
+   * WDT_PERIOD_2KCLK_gc    - 2048ms (~2.0s)
+   * WDT_PERIOD_4KCLK_gc    - 4096ms (~4.1s)
+   * WDT_PERIOD_8KCLK_gc    - 8192ms (~8.2s)
+   */
+  _PROTECTED_WRITE(WDT.CTRLA, WDT_PERIOD_128CLK_gc);
+
+  while (WDT.STATUS & WDT_SYNCBUSY_bm)
+    ;
 }
 
 static void scheduleTask(uint8_t taskIndex, uint16_t delayTicks)
@@ -397,6 +429,8 @@ static void prepareNextWakeup(void)
     {
       RTC.CMP = nextTime;
     }
+
+    rtc_wait_ready();
   }
 }
 
@@ -572,6 +606,8 @@ ISR(PORTC_PORT_vect)
 
 int main(void)
 {
+  RSTCTRL.RSTFR = 0xFF;
+
   init_clock();
   init_rtc();
   init_all_pins_low_power();
