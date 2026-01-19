@@ -269,26 +269,33 @@ static inline void rtc_wait_ready(void)
 
 static void init_rtc(void)
 {
-    // Wait for any previous power-on synchronization to finish
-    rtc_wait_ready();
-    
-    RTC.CTRLA = 0; 
-    rtc_wait_ready(); // MUST wait after disabling before changing CLKSEL
-    
-    RTC.CLKSEL = RTC_CLKSEL_INT1K_gc; 
-    RTC.INTFLAGS = RTC_OVF_bm | RTC_CMP_bm;
-    
-    // Set your metronome's first "tick" interval here
-    RTC.CMP = 100; 
+  // Wait for any previous power-on synchronization to finish
+  rtc_wait_ready();
 
-    // Now wait once before the final "Enable" to catch all previous writes
-    rtc_wait_ready(); 
-    
-    RTC.CTRLA = RTC_PRESCALER_DIV1_gc | RTC_RTCEN_bm | RTC_RUNSTDBY_bm;
-    RTC.INTCTRL = RTC_CMP_bm; 
-    
-    // Final wait to ensure RTC is actually running before we leave the function
-    rtc_wait_ready();
+  // Disable RTC before changing configuration
+  RTC.CTRLA = 0;
+  rtc_wait_ready(); // MUST wait after disabling before changing CLKSEL
+
+  // Select internal 1kHz clock source
+  RTC.CLKSEL = RTC_CLKSEL_INT1K_gc;
+  rtc_wait_ready(); // MUST wait after changing clock source
+
+  // Clear any pending interrupt flags
+  RTC.INTFLAGS = RTC_OVF_bm | RTC_CMP_bm;
+
+  // Set initial compare value for first metronome tick
+  RTC.CMP = 100;
+  rtc_wait_ready(); // MUST wait after setting compare value
+
+  // Enable RTC with DIV1 prescaler, run in standby mode
+  RTC.CTRLA = RTC_PRESCALER_DIV1_gc | RTC_RTCEN_bm | RTC_RUNSTDBY_bm;
+  rtc_wait_ready(); // MUST wait after enabling RTC
+
+  // Enable compare match interrupt
+  RTC.INTCTRL = RTC_CMP_bm;
+
+  // Final wait to ensure RTC is fully operational before returning
+  rtc_wait_ready();
 }
 
 static void init_all_pins_low_power(void)
