@@ -59,6 +59,7 @@
 #define LED_LSB_PIN PIN5_bm  // PA5 - LSB (bit 0)
 
 // Timing constants (in RTC ticks at 1024Hz, 1 tick = 1ms)
+#define RTC_MIN_SAFE_MARGIN 4
 #define DEBOUNCE_DELAY 30
 #define LED_ON_DURATION 500
 #define HAPTIC_DURATION 100
@@ -93,29 +94,53 @@
 #define DRV2605L_REG_CONTROL5 0x1F
 #define DRV2605L_REG_FEEDBACK 0x1A
 
-typedef struct
-{
-  volatile uint16_t timeDue; // Time when task should execute (in RTC ticks)
-  volatile bool isPending;   // Set by ISR, cleared after execution
-  void (*callback)(void);
-} Task;
+#define TASK_PENDING (1 << 0)
+#define NUM_TASKS 8
 
-#define NUM_TASKS 6
 enum TaskIndex
 {
-  TASK_OUTPUT_ON = 0,
-  TASK_OUTPUT_OFF,
-  TASK_LED_OFF,
+  TASK_PLAY = 0,
+  TASK_HAPTIC_STANDBY,
+  TASK_HIDE_BPM,
+  TASK_HIDE_STATUS,
   TASK_BUTTON1_DEBOUNCE,
   TASK_BUTTON2_DEBOUNCE,
   TASK_BUTTON3_DEBOUNCE,
+  TASK_PAUSE
 };
 
-Task taskList[NUM_TASKS];
+typedef struct
+{
+  uint8_t pinMask;
+  uint8_t pinCtrlIndex;
+  uint8_t task;
+} ButtonDef;
 
-// BPM control (0-155 range)
-volatile uint8_t bpm = 60;       // Default BPM
-volatile bool isPlaying = false; // Play/pause state
+typedef enum
+{
+  BTN_IDLE,
+  BTN_PRESSED
+} ButtonState;
+
+typedef struct
+{
+  uint16_t timeDue;
+  uint8_t flags;
+  void (*callback)(void);
+} Task;
+
+static volatile ButtonState buttonState[3];
+
+static const ButtonDef buttons[] =
+    {
+        {BUTTON1_PIN, 1, TASK_BUTTON1_DEBOUNCE},
+        {BUTTON2_PIN, 2, TASK_BUTTON2_DEBOUNCE},
+        {BUTTON3_PIN, 3, TASK_BUTTON3_DEBOUNCE},
+};
+
+static Task tasks[NUM_TASKS];
+
+uint8_t bpm = 60;
 
 static void debugLedOn(void)
 {
@@ -319,11 +344,15 @@ static void init_all_pins_low_power(void)
 
 static void init_buttons(void)
 {
-  // Configure PC1, PC2, PC3 as inputs with pull-ups
   PORTC.DIRCLR = BUTTON1_PIN | BUTTON2_PIN | BUTTON3_PIN;
-  PORTC.PIN1CTRL = PORT_PULLUPEN_bm | PORT_ISC_INTDISABLE_gc;
+
+  PORTC.PIN1CTRL = PORT_PULLUPEN_bm | PORT_ISC_BOTHEDGES_gc;
   PORTC.PIN2CTRL = PORT_PULLUPEN_bm | PORT_ISC_BOTHEDGES_gc;
-  PORTC.PIN3CTRL = PORT_PULLUPEN_bm | PORT_ISC_INTDISABLE_gc;
+  PORTC.PIN3CTRL = PORT_PULLUPEN_bm | PORT_ISC_BOTHEDGES_gc;
+
+  buttonState[0] = BTN_IDLE;
+  buttonState[1] = BTN_IDLE;
+  buttonState[2] = BTN_IDLE;
 }
 
 static void init_leds(void)
@@ -371,74 +400,23 @@ static void enterSleep(void)
     ;
 }
 
-static void scheduleTask(uint8_t taskIndex, uint16_t delayTicks)
+static bool anyTaskPending(void)
 {
-  taskList[taskIndex].timeDue = RTC.CNT + delayTicks;
-  taskList[taskIndex].isPending = true;
-}
-
-static void processTasks(void)
-{
-  rtc_wait_ready(); // this is critical to wait for RTC to be ready
-
-  uint16_t now = RTC.CNT;
-
-  for (uint8_t i = 0; i < NUM_TASKS; i++)
-  {
-    bool shouldRun = false;
-
-    ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
-    {
-      if (taskList[i].isPending && (int16_t)(taskList[i].timeDue - now) <= 0)
-      {
-        taskList[i].isPending = false;
-        shouldRun = true;
-      }
-    }
-
-    if (shouldRun)
-    {
-      taskList[i].callback();
-    }
-  }
-}
-
-static void prepareNextWakeup(void)
-{
-  uint16_t nextTime = 0xFFFF;
-  bool foundTask = false;
+  bool pending = false;
 
   ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
   {
     for (uint8_t i = 0; i < NUM_TASKS; i++)
     {
-      if (taskList[i].isPending)
+      if (tasks[i].flags & TASK_PENDING)
       {
-        if (!foundTask || (int16_t)(taskList[i].timeDue - nextTime) < 0)
-        {
-          nextTime = taskList[i].timeDue;
-          foundTask = true;
-        }
+        pending = true;
+        break;
       }
     }
   }
 
-  if (foundTask)
-  {
-    rtc_wait_ready();
-    uint16_t now = RTC.CNT;
-
-    if ((int16_t)(nextTime - now) <= 0)
-    {
-      RTC.CMP = now + 1;
-    }
-    else
-    {
-      RTC.CMP = nextTime;
-    }
-
-    rtc_wait_ready();
-  }
+  return pending;
 }
 
 static void haptic_trigger(void)
@@ -457,39 +435,17 @@ static void haptic_standby(void)
   i2c_shutdown();
 }
 
-static void statusLedOn(void)
+static void showStatus(void)
 {
   PORTA.OUTCLR = LED_STATUS_PIN; // Active low
 }
 
-static void statusLedOff(void)
+static void hideStatus(void)
 {
   PORTA.OUTSET = LED_STATUS_PIN;
 }
 
-static void outputOnTask(void)
-{
-  if (!isPlaying)
-    return;
-
-  haptic_trigger();
-
-  statusLedOn();
-
-  scheduleTask(TASK_OUTPUT_OFF, HAPTIC_DURATION);
-
-  uint16_t ticksPerBeat = (60UL * 1024) / bpm;
-  scheduleTask(TASK_OUTPUT_ON, ticksPerBeat);
-}
-
-static void outputOffTask(void)
-{
-  haptic_standby();
-
-  statusLedOff();
-}
-
-static void ledOnTask(void)
+static void showBPM(void)
 {
   // Scale BPM by 5: display_value = BPM / 5
   uint8_t scaled = bpm / 5;
@@ -504,84 +460,209 @@ static void ledOnTask(void)
   (scaled & 0x10) ? (PORTB.OUTCLR = LED_MSB_PIN) : (PORTB.OUTSET = LED_MSB_PIN);
 }
 
-static void ledOffTask(void)
+static void hideBPM(void)
 {
   // Turn off all LEDs (active low - set HIGH)
   PORTA.OUTSET = LED_LSB_PIN | LED_BIT1_PIN | LED_BIT2_PIN;
   PORTB.OUTSET = LED_MSB_PIN | LED_BIT3_PIN;
 }
 
-static void button1DebounceTask(void)
+static void task_schedule(uint8_t task, uint16_t delay)
 {
-  if (!(PORTC.IN & BUTTON1_PIN))
-  {
-    bpm = MAX(bpm - BPM_INCREMENT, BPM_MIN);
+  uint16_t due;
 
-    ledOnTask();
-    scheduleTask(TASK_LED_OFF, LED_ON_DURATION);
+  rtc_wait_ready();
+  due = RTC.CNT + delay;
+
+  ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
+  {
+    tasks[task].timeDue = due;
+    tasks[task].flags |= TASK_PENDING;
   }
-  PORTC.PIN1CTRL = PORT_PULLUPEN_bm | PORT_ISC_BOTHEDGES_gc;
 }
 
-static void button2DebounceTask(void)
+static void task_cancel(uint8_t task)
 {
-  if (!(PORTC.IN & BUTTON2_PIN))
+  ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
   {
-    isPlaying = !isPlaying;
-    if (isPlaying)
+    tasks[task].flags &= ~TASK_PENDING;
+  }
+}
+
+static void play(void)
+{
+  showStatus();
+  task_schedule(TASK_HIDE_STATUS, HAPTIC_DURATION);
+  task_schedule(TASK_HAPTIC_STANDBY, HAPTIC_DURATION);
+
+  uint16_t ticks = (60UL * 1024) / bpm;
+  task_schedule(TASK_PLAY, ticks);
+
+  haptic_trigger();
+}
+
+static void pause(void)
+{
+  task_cancel(TASK_PLAY);
+  hideBPM();
+  hideStatus();
+  haptic_standby();
+}
+
+static void processTasks(void)
+{
+  uint16_t now;
+
+  rtc_wait_ready();
+  ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
+  {
+    now = RTC.CNT;
+  }
+
+  for (uint8_t i = 0; i < NUM_TASKS; i++)
+  {
+    bool run = false;
+
+    ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
     {
-      outputOnTask();
-      ledOnTask();
-      scheduleTask(TASK_LED_OFF, LED_ON_DURATION);
-      PORTC.PIN1CTRL = PORT_PULLUPEN_bm | PORT_ISC_BOTHEDGES_gc;
-      PORTC.PIN3CTRL = PORT_PULLUPEN_bm | PORT_ISC_BOTHEDGES_gc;
-    }
-    else
-    {
-      for (uint8_t i = 0; i < NUM_TASKS; i++)
+      if ((tasks[i].flags & TASK_PENDING) &&
+          (int16_t)(tasks[i].timeDue - now) <= 0)
       {
-        taskList[i].isPending = false;
+        tasks[i].flags &= ~TASK_PENDING;
+        run = true;
       }
-      outputOffTask();
-      ledOffTask();
-      PORTC.PIN1CTRL = PORT_PULLUPEN_bm | PORT_ISC_INTDISABLE_gc;
-      PORTC.PIN3CTRL = PORT_PULLUPEN_bm | PORT_ISC_INTDISABLE_gc;
+    }
+
+    if (run)
+      tasks[i].callback();
+  }
+}
+
+static void prepareNextWakeup(void)
+{
+  uint16_t now;
+  uint16_t next = 0;
+  bool found = false;
+
+  rtc_wait_ready();
+  ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
+  {
+    now = RTC.CNT;
+
+    for (uint8_t i = 0; i < NUM_TASKS; i++)
+    {
+      if (tasks[i].flags & TASK_PENDING)
+      {
+        if (!found ||
+            (int16_t)(tasks[i].timeDue - now) <
+                (int16_t)(next - now))
+        {
+          next = tasks[i].timeDue;
+          found = true;
+        }
+      }
+    }
+
+    if (found)
+    {
+      RTC.INTCTRL = 0;
+      RTC.CMP = MAX(next, now + RTC_MIN_SAFE_MARGIN);
+      RTC.INTCTRL = RTC_CMP_bm;
     }
   }
-  PORTC.PIN2CTRL = PORT_PULLUPEN_bm | PORT_ISC_BOTHEDGES_gc;
 }
 
-static void button3DebounceTask(void)
+static void buttonDebounce(uint8_t i)
 {
-  if (!(PORTC.IN & BUTTON3_PIN))
-  {
-    bpm = MIN(bpm + BPM_INCREMENT, BPM_MAX);
+  uint8_t mask = buttons[i].pinMask;
+  uint8_t ctrl = buttons[i].pinCtrlIndex;
 
-    ledOnTask();
-    scheduleTask(TASK_LED_OFF, LED_ON_DURATION);
+  bool pressed = !(PORTC.IN & mask);
+
+  if (pressed && buttonState[i] == BTN_IDLE)
+  {
+    // Stable press detected
+    buttonState[i] = BTN_PRESSED;
+
+    // Perform action
+    switch (i)
+    {
+    case 0: // Decrease BPM
+      bpm = MAX(bpm - BPM_INCREMENT, BPM_MIN);
+      showBPM();
+      task_schedule(TASK_HIDE_BPM, LED_ON_DURATION);
+      break;
+
+    case 1: // Play/Pause toggle
+      if (tasks[TASK_PLAY].flags & TASK_PENDING)
+      {
+        // Currently playing → pause
+        task_schedule(TASK_PAUSE, 1);
+      }
+      else
+      {
+        // Currently paused → start playing
+        showBPM();
+        task_schedule(TASK_HIDE_BPM, LED_ON_DURATION);
+        task_schedule(TASK_PLAY, 1);
+      }
+      break;
+
+    case 2: // Increase BPM
+      bpm = MIN(bpm + BPM_INCREMENT, BPM_MAX);
+      showBPM();
+      task_schedule(TASK_HIDE_BPM, LED_ON_DURATION);
+      break;
+    }
+
+    // Keep polling until release
+    task_schedule(buttons[i].task, DEBOUNCE_DELAY);
   }
-  PORTC.PIN3CTRL = PORT_PULLUPEN_bm | PORT_ISC_BOTHEDGES_gc;
+  else if (!pressed && buttonState[i] == BTN_PRESSED)
+  {
+    // Stable release detected
+    buttonState[i] = BTN_IDLE;
+
+    // Re-arm interrupt
+    (&PORTC.PIN0CTRL)[ctrl] =
+        PORT_PULLUPEN_bm | PORT_ISC_BOTHEDGES_gc;
+  }
+  else
+  {
+    // Still bouncing or still held → check again
+    task_schedule(buttons[i].task, DEBOUNCE_DELAY);
+  }
 }
+
+static void button1Task(void) { buttonDebounce(0); }
+static void button2Task(void) { buttonDebounce(1); }
+static void button3Task(void) { buttonDebounce(2); }
 
 static void init_tasks(void)
 {
-  taskList[TASK_OUTPUT_ON].callback = outputOnTask;
-  taskList[TASK_OUTPUT_ON].isPending = false;
+  tasks[TASK_PLAY].callback = play;
+  tasks[TASK_PLAY].flags = 0;
 
-  taskList[TASK_OUTPUT_OFF].callback = outputOffTask;
-  taskList[TASK_OUTPUT_OFF].isPending = false;
+  tasks[TASK_PAUSE].callback = pause;
+  tasks[TASK_PAUSE].flags = 0;
 
-  taskList[TASK_LED_OFF].callback = ledOffTask;
-  taskList[TASK_LED_OFF].isPending = false;
+  tasks[TASK_HAPTIC_STANDBY].callback = haptic_standby;
+  tasks[TASK_HAPTIC_STANDBY].flags = 0;
 
-  taskList[TASK_BUTTON1_DEBOUNCE].callback = button1DebounceTask;
-  taskList[TASK_BUTTON1_DEBOUNCE].isPending = false;
+  tasks[TASK_HIDE_BPM].callback = hideBPM;
+  tasks[TASK_HIDE_BPM].flags = 0;
 
-  taskList[TASK_BUTTON2_DEBOUNCE].callback = button2DebounceTask;
-  taskList[TASK_BUTTON2_DEBOUNCE].isPending = false;
+  tasks[TASK_HIDE_STATUS].callback = hideStatus;
+  tasks[TASK_HIDE_STATUS].flags = 0;
 
-  taskList[TASK_BUTTON3_DEBOUNCE].callback = button3DebounceTask;
-  taskList[TASK_BUTTON3_DEBOUNCE].isPending = false;
+  tasks[TASK_BUTTON1_DEBOUNCE].callback = button1Task;
+  tasks[TASK_BUTTON1_DEBOUNCE].flags = 0;
+
+  tasks[TASK_BUTTON2_DEBOUNCE].callback = button2Task;
+  tasks[TASK_BUTTON2_DEBOUNCE].flags = 0;
+
+  tasks[TASK_BUTTON3_DEBOUNCE].callback = button3Task;
+  tasks[TASK_BUTTON3_DEBOUNCE].flags = 0;
 }
 
 ISR(RTC_CNT_vect)
@@ -594,20 +675,22 @@ ISR(PORTC_PORT_vect)
   uint8_t flags = PORTC.INTFLAGS;
   PORTC.INTFLAGS = flags;
 
-  if ((flags & BUTTON1_PIN) && !(PORTC.IN & BUTTON1_PIN) && !taskList[TASK_BUTTON1_DEBOUNCE].isPending && isPlaying)
+  if (flags & BUTTON1_PIN)
   {
     PORTC.PIN1CTRL = PORT_PULLUPEN_bm | PORT_ISC_INTDISABLE_gc;
-    scheduleTask(TASK_BUTTON1_DEBOUNCE, DEBOUNCE_DELAY);
+    task_schedule(TASK_BUTTON1_DEBOUNCE, DEBOUNCE_DELAY);
   }
-  if ((flags & BUTTON2_PIN) && !(PORTC.IN & BUTTON2_PIN) && !taskList[TASK_BUTTON2_DEBOUNCE].isPending)
+
+  if (flags & BUTTON2_PIN)
   {
     PORTC.PIN2CTRL = PORT_PULLUPEN_bm | PORT_ISC_INTDISABLE_gc;
-    scheduleTask(TASK_BUTTON2_DEBOUNCE, DEBOUNCE_DELAY);
+    task_schedule(TASK_BUTTON2_DEBOUNCE, DEBOUNCE_DELAY);
   }
-  if ((flags & BUTTON3_PIN) && !(PORTC.IN & BUTTON3_PIN) && !taskList[TASK_BUTTON3_DEBOUNCE].isPending && isPlaying)
+
+  if (flags & BUTTON3_PIN)
   {
     PORTC.PIN3CTRL = PORT_PULLUPEN_bm | PORT_ISC_INTDISABLE_gc;
-    scheduleTask(TASK_BUTTON3_DEBOUNCE, DEBOUNCE_DELAY);
+    task_schedule(TASK_BUTTON3_DEBOUNCE, DEBOUNCE_DELAY);
   }
 }
 
@@ -629,7 +712,7 @@ int main(void)
   {
     processTasks();
     prepareNextWakeup();
-    set_sleep_mode((isPlaying || taskList[TASK_BUTTON2_DEBOUNCE].isPending)
+    set_sleep_mode((anyTaskPending())
                        ? SLEEP_MODE_STANDBY
                        : SLEEP_MODE_PWR_DOWN);
     enterSleep();
