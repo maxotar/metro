@@ -7,6 +7,7 @@
 #include <util/delay.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <stddef.h>
 #include "i2c.h"
 
 /* ============================================================================
@@ -31,22 +32,81 @@
    PB4 10 | LED_MSB     | LED bit 4 (MSB)| Output    | Active low
    PB5  9 | LED_BIT3    | LED bit 3      | Output    | Active low
    PC0 15 | -           | FREE           | -         | Available
-   PC1 16 | BUTTON1     | Decrease BPM   | Input     | Pullup, falling edge int
-   PC2 17 | BUTTON2     | Play/Pause     | Input     | Pullup, falling edge int ASYNC
-   PC3 18 | BUTTON3     | Increase BPM   | Input     | Pullup, falling edge int
+   PC1 16 | BUTTON1     | Decrease BPM   | Input     | Internal Pullup, BOTH EDGES
+   PC2 17 | BUTTON2     | Play/Pause     | Input     | Internal Pullup, BOTH EDGES
+   PC3 18 | BUTTON3     | Increase BPM   | Input     | Internal Pullup, BOTH EDGES
 
    Used: 12 pins (3 buttons + 6 LEDs + 2 I2C + 1 UPDI)
    Free: 6 pins (PA1-PA3, PB2-PB3, PC0)
    ============================================================================ */
 
+typedef enum
+{
+  BTN_IDLE,
+  BTN_PRESSED
+} ButtonState;
+
+typedef struct
+{
+  uint8_t pinMask;
+  volatile uint8_t *pinCtrl;
+  uint8_t taskIndex;
+  void (*onPress)(void);
+  volatile ButtonState state;
+} Button;
+
+typedef struct
+{
+  uint16_t timeDue;
+  uint8_t flags;
+  void (*callback)(void *ctx);
+  void *context;
+} Task;
+
+static void task_play(void *ctx);
+static void task_pause(void *ctx);
+static void task_haptic_standby(void *ctx);
+static void task_hide_BPM(void *ctx);
+static void task_hide_status(void *ctx);
+static void task_debounce(void *ctx);
+static void action_dec(void);
+static void action_inc(void);
+static void action_play(void);
+
+enum TaskIndex
+{
+  TASK_BTN_DEC_POLL,
+  TASK_BTN_PLAY_POLL,
+  TASK_BTN_INC_POLL,
+  TASK_PLAY,
+  TASK_HAPTIC_STANDBY,
+  TASK_HIDE_BPM,
+  TASK_HIDE_STATUS,
+  TASK_PAUSE,
+  NUM_TASKS
+};
+
+static Button buttons[] = {
+    {PIN1_bm, &PORTC.PIN1CTRL, TASK_BTN_DEC_POLL, action_dec, BTN_IDLE},
+    {PIN2_bm, &PORTC.PIN2CTRL, TASK_BTN_PLAY_POLL, action_play, BTN_IDLE},
+    {PIN3_bm, &PORTC.PIN3CTRL, TASK_BTN_INC_POLL, action_inc, BTN_IDLE}};
+
+static Task tasks[NUM_TASKS] = {
+    {0, 0, task_debounce, &buttons[0]}, // TASK_BTN_DEC_POLL
+    {0, 0, task_debounce, &buttons[1]}, // TASK_BTN_PLAY_POLL
+    {0, 0, task_debounce, &buttons[2]}, // TASK_BTN_INC_POLL
+    {0, 0, task_play, NULL},            // TASK_PLAY
+    {0, 0, task_haptic_standby, NULL},  // TASK_HAPTIC_STANDBY
+    {0, 0, task_hide_BPM, NULL},        // TASK_HIDE_BPM
+    {0, 0, task_hide_status, NULL},     // TASK_HIDE_STATUS
+    {0, 0, task_pause, NULL}            // TASK_PAUSE
+};
+
 // Macros
+#define NUM_BUTTONS (sizeof(buttons) / sizeof(Button))
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
-
-// Button pins on Port C
-#define BUTTON1_PIN PIN1_bm // PC1 - Decrease BPM
-#define BUTTON2_PIN PIN2_bm // PC2 - Play/Pause
-#define BUTTON3_PIN PIN3_bm // PC3 - Increase BPM
+#define TASK_PENDING (1 << 0)
 
 // Status LED
 #define LED_STATUS_PIN PIN4_bm // PA4 - Status LED (active low)
@@ -59,7 +119,6 @@
 #define LED_LSB_PIN PIN5_bm  // PA5 - LSB (bit 0)
 
 // Timing constants (in RTC ticks at 1024Hz, 1 tick = 1ms)
-#define RTC_MIN_SAFE_MARGIN 4
 #define DEBOUNCE_DELAY 30
 #define LED_ON_DURATION 500
 #define HAPTIC_DURATION 100
@@ -93,68 +152,12 @@
 #define DRV2605L_REG_CONTROL4 0x1E
 #define DRV2605L_REG_CONTROL5 0x1F
 #define DRV2605L_REG_FEEDBACK 0x1A
+#define DRV2605L_REG_RATED_VOLT 0x16
+#define DRV2605L_REG_CLAMP_VOLT 0x17
+#define DRV2605L_REG_CALIB_COMP 0x18
+#define DRV2605L_REG_CALIB_BEMF 0x19
 
-#define TASK_PENDING (1 << 0)
-#define NUM_TASKS 8
-
-enum TaskIndex
-{
-  TASK_PLAY = 0,
-  TASK_HAPTIC_STANDBY,
-  TASK_HIDE_BPM,
-  TASK_HIDE_STATUS,
-  TASK_BUTTON1_DEBOUNCE,
-  TASK_BUTTON2_DEBOUNCE,
-  TASK_BUTTON3_DEBOUNCE,
-  TASK_PAUSE
-};
-
-typedef struct
-{
-  uint8_t pinMask;
-  uint8_t pinCtrlIndex;
-  uint8_t task;
-} ButtonDef;
-
-typedef enum
-{
-  BTN_IDLE,
-  BTN_PRESSED
-} ButtonState;
-
-typedef struct
-{
-  uint16_t timeDue;
-  uint8_t flags;
-  void (*callback)(void);
-} Task;
-
-static volatile ButtonState buttonState[3];
-
-static const ButtonDef buttons[] =
-    {
-        {BUTTON1_PIN, 1, TASK_BUTTON1_DEBOUNCE},
-        {BUTTON2_PIN, 2, TASK_BUTTON2_DEBOUNCE},
-        {BUTTON3_PIN, 3, TASK_BUTTON3_DEBOUNCE},
-};
-
-static Task tasks[NUM_TASKS];
-
-uint8_t bpm = 60;
-
-static void debugLedOn(void)
-{
-  // delete before final code commits
-  PORTC.DIRSET = PIN0_bm;
-  PORTC.OUTCLR = PIN0_bm;
-}
-
-static void debugLedOff(void)
-{
-  // delete before final code commits
-  PORTC.DIRSET = PIN0_bm;
-  PORTC.OUTSET = PIN0_bm;
-}
+uint8_t bpm = 100;
 
 static void init_clock(void)
 {
@@ -163,125 +166,95 @@ static void init_clock(void)
   _PROTECTED_WRITE(CLKCTRL.MCLKCTRLB, (1 << CLKCTRL_PDIV_gp) | CLKCTRL_PEN_bm);
 }
 
-static bool try_init_haptic_driver_erm(void)
-{
-  // Exit standby mode - set MODE to internal trigger (0x00)
-  if (!i2c_write_reg_u8(DRV2605L_ADDR, DRV2605L_REG_MODE, 0x00))
-    return false;
-
-  // Small delay for mode change to take effect
-  _delay_us(100);
-
-  // Select library (Library 1 for ERM - TS2200 motors)
-  // Library options: 1=A (2-3V), 2=B (3V), 3=C (3-5V), 4=D (4-5V), 5=E (5V)
-  if (!i2c_write_reg_u8(DRV2605L_ADDR, DRV2605L_REG_LIBRARY, 0x01))
-    return false;
-
-  // Configure feedback control for ERM mode
-  // Bit 7 = 0 (ERM mode), Bit 6 = 0 (4x brake factor), Bit 1-0 = medium gain
-  if (!i2c_write_reg_u8(DRV2605L_ADDR, DRV2605L_REG_FEEDBACK, 0x00))
-    return false;
-
-  // Set Control3 - ERM mode, open loop
-  // Bit 7 = 0 (ERM mode on N_ERM_LRA pin)
-  // Bit 5 = 0 (analog input)
-  // Bit 4 = 1 (supply compensation disable for open loop)
-  // Bit 3 = 0 (data format: signed)
-  // Bits 2-0 = 0 (loop gain = 0 for open loop)
-  if (!i2c_write_reg_u8(DRV2605L_ADDR, DRV2605L_REG_CONTROL3, 0x10))
-    return false;
-
-  // Set Control1 - Drive time for ERM (typically default is fine)
-  // Bit 7-5 = 100 (startup boost)
-  // Bit 4-0 = 10011 (drive time - can use default for ERM)
-  if (!i2c_write_reg_u8(DRV2605L_ADDR, DRV2605L_REG_CONTROL1, 0x93))
-    return false;
-
-  // Set Control2 - Unidirectional for ERM
-  // Bit 3 = 0 (unidirectional input for ERM)
-  if (!i2c_write_reg_u8(DRV2605L_ADDR, DRV2605L_REG_CONTROL2, 0x00))
-    return false;
-
-  // Load default waveform: Strong Click 100% (effect 1)
-  if (!i2c_write_reg_u8(DRV2605L_ADDR, DRV2605L_REG_WAVESEQ1, 0x01))
-    return false;
-  // End sequence
-  if (!i2c_write_reg_u8(DRV2605L_ADDR, DRV2605L_REG_WAVESEQ1 + 1, 0x00))
-    return false;
-
-  // Enter standby mode for low power consumption
-  if (!i2c_write_reg_u8(DRV2605L_ADDR, DRV2605L_REG_MODE, 0x40))
-    return false;
-
-  return true;
-}
-
 static bool try_init_haptic_driver(void)
 {
-  // Exit standby mode - set MODE to internal trigger (0x00)
-  if (!i2c_write_reg_u8(DRV2605L_ADDR, DRV2605L_REG_MODE, 0x00))
-    return false;
+  // -----------------------------------------------------------------------------
+  // DRV2605L + VLV101040A LRA initialization
+  //
+  // Motor: VLV101040A
+  //  - Type: LRA, Z-axis
+  //  - Size: 10 × 10 × 4 mm
+  //  - Rated voltage: 2.5 Vrms
+  //  - Resonant frequency: ~170 Hz
+  //  - Usable bandwidth: ~140–300 Hz
+  //  - Fast response: ~10 ms rise, ~40 ms fall (unbraked)
+  //
+  // Usage:
+  //  - Wearable haptic metronome
+  //  - Very short, strong "tick" pulses (~12 ms)
+  //  - Fixed frequency, open-loop, RTP drive
+  //  - Aggressive braking to suppress ring-down
+  // -----------------------------------------------------------------------------
 
-  // Small delay for mode change to take effect
-  _delay_us(100);
+  // --- Exit standby / reset internal state ---
+  // Required before writing most configuration registers
+  i2c_write_reg_u8(DRV2605L_ADDR, DRV2605L_REG_MODE, 0x00);
 
-  // Select library (Library 6 for LRA strong click)
-  if (!i2c_write_reg_u8(DRV2605L_ADDR, DRV2605L_REG_LIBRARY, 0x06))
-    return false;
+  // --- Select Real-Time Playback (RTP) ---
+  // WaveSeq = 0x7F routes drive amplitude from RTPIN register
+  // This bypasses waveform libraries and gives direct control
+  i2c_write_reg_u8(DRV2605L_ADDR, DRV2605L_REG_WAVESEQ1, 0x7F);
+  i2c_write_reg_u8(DRV2605L_ADDR, DRV2605L_REG_WAVESEQ2, 0x00);
 
-  // Configure feedback control for LRA mode
-  // Bit 7 = 1 (LRA mode), Bit 6 = 0 (4x brake factor)
-  if (!i2c_write_reg_u8(DRV2605L_ADDR, DRV2605L_REG_FEEDBACK, 0x80))
-    return false;
+  // --- Set LRA resonant frequency (~170 Hz) ---
+  // CONTROL1 = Drive Time
+  // DriveTime = (1 / (2 × f)) × 10000 − 1
+  // For 170 Hz → ~28–29 → 0x1C
+  //
+  // This sets the waveform frequency for *all* RTP pulses
+  i2c_write_reg_u8(DRV2605L_ADDR, DRV2605L_REG_CONTROL1, 0x1C);
 
-  // Set Control3 - LRA mode, open loop
-  // Bit 7 = 1 (LRA mode), Bit 4 = 1 (supply comp disable), Bits 2-0 = 0 (open loop)
-  if (!i2c_write_reg_u8(DRV2605L_ADDR, DRV2605L_REG_CONTROL3, 0x90))
-    return false;
+  // --- Clamp voltage (attack strength) ---
+  // Raised above rated voltage for very short pulses
+  // ~3.6 V peak equivalent
+  //
+  // Safe because:
+  //  - Pulse width is only ~12 ms
+  //  - Duty cycle is extremely low (metronome use)
+  i2c_write_reg_u8(DRV2605L_ADDR, DRV2605L_REG_CLAMP_VOLT, 0xA5);
 
-  // Set Control1 - Drive time for 170Hz LRA + startup boost
-  if (!i2c_write_reg_u8(DRV2605L_ADDR, DRV2605L_REG_CONTROL1, 0x93))
-    return false;
+  // --- Feedback / braking configuration ---
+  // Bit 7 = 1 → LRA mode
+  // Brake factor = 8× → fast stop, minimal ring-down
+  // Loop gain = medium → stable, predictable response
+  //
+  // This is critical for making the vibration feel like a "tap"
+  // instead of a buzz when mounted against skin.
+  i2c_write_reg_u8(DRV2605L_ADDR, DRV2605L_REG_FEEDBACK, 0xBC);
 
-  // Load default waveform: Strong Click 100% (effect 1)
-  if (!i2c_write_reg_u8(DRV2605L_ADDR, DRV2605L_REG_WAVESEQ1, 0x01))
-    return false;
+  // --- Disable auto-resonance & force open-loop ---
+  // Required because this LRA has unusually wide bandwidth
+  // Auto-resonance causes frequency hunting and inconsistent pulses
+  //
+  // Bit 5 = 1 → disable auto-resonance
+  // Bit 1 = 1 → bidirectional drive
+  // Bit 0 = 1 → open-loop
+  i2c_write_reg_u8(DRV2605L_ADDR, DRV2605L_REG_CONTROL3, 0x23);
 
-  // End sequence
-  if (!i2c_write_reg_u8(DRV2605L_ADDR, DRV2605L_REG_WAVESEQ1 + 1, 0x00))
-    return false;
+  // --- Optional: low-power idle ---
+  // Device will be woken and put into RTP mode per pulse
+  i2c_write_reg_u8(DRV2605L_ADDR, DRV2605L_REG_MODE, 0x40);
 
-  // Enter standby mode for low power
-  if (!i2c_write_reg_u8(DRV2605L_ADDR, DRV2605L_REG_MODE, 0x40))
-    return false;
-
-  return true;
+  return true; // We assume success; power-cycle recovery is acceptable
 }
 
 static void init_haptic_driver(void)
 {
-  // Wait for DRV2605L power-on settling
+  // Allow DRV2605L internal POR to settle
   _delay_us(250);
 
-  // Keep trying until initialization succeeds
   while (1)
   {
-    // Recover bus and initialize I2C
     i2c_bus_recovery();
     init_i2c();
 
-    // Try to configure the device
-    if (try_init_haptic_driver_erm())
+    if (try_init_haptic_driver())
     {
-      // Success! Clean up and exit
       i2c_shutdown();
       break;
     }
 
-    // Failed - clean up before retry
     i2c_shutdown();
-
-    // Wait before retry to avoid hammering the bus
     _delay_ms(10);
   }
 }
@@ -323,36 +296,35 @@ static void init_rtc(void)
   rtc_wait_ready();
 }
 
-static void init_all_pins_low_power(void)
+static void init_unused_pins_low_power(void)
 {
-  // Set all pins as outputs driving low
-  PORTA.DIRSET = 0xFF;
-  PORTA.OUTCLR = 0xFF;
-  PORTB.DIRSET = 0xFF;
-  PORTB.OUTCLR = 0xFF;
-  PORTC.DIRSET = 0xFF;
-  PORTC.OUTCLR = 0xFF;
+  PORTA.OUTCLR = PIN1_bm | PIN2_bm | PIN3_bm;
+  PORTA.DIRSET = PIN1_bm | PIN2_bm | PIN3_bm;
+  PORTA.PIN1CTRL = PORT_ISC_INPUT_DISABLE_gc;
+  PORTA.PIN2CTRL = PORT_ISC_INPUT_DISABLE_gc;
+  PORTA.PIN3CTRL = PORT_ISC_INPUT_DISABLE_gc;
 
-  // Disable input buffers on all pins
-  for (uint8_t i = 0; i < 8; i++)
-  {
-    (&PORTA.PIN0CTRL)[i] = PORT_ISC_INPUT_DISABLE_gc;
-    (&PORTB.PIN0CTRL)[i] = PORT_ISC_INPUT_DISABLE_gc;
-    (&PORTC.PIN0CTRL)[i] = PORT_ISC_INPUT_DISABLE_gc;
-  }
+  PORTB.OUTCLR = PIN2_bm | PIN3_bm;
+  PORTB.DIRSET = PIN2_bm | PIN3_bm;
+  PORTB.PIN2CTRL = PORT_ISC_INPUT_DISABLE_gc;
+  PORTB.PIN3CTRL = PORT_ISC_INPUT_DISABLE_gc;
+
+  PORTC.OUTCLR = PIN0_bm;
+  PORTC.DIRSET = PIN0_bm;
+  PORTC.PIN0CTRL = PORT_ISC_INPUT_DISABLE_gc;
 }
 
 static void init_buttons(void)
 {
-  PORTC.DIRCLR = BUTTON1_PIN | BUTTON2_PIN | BUTTON3_PIN;
+  uint8_t allButtonPins = 0;
 
-  PORTC.PIN1CTRL = PORT_PULLUPEN_bm | PORT_ISC_BOTHEDGES_gc;
-  PORTC.PIN2CTRL = PORT_PULLUPEN_bm | PORT_ISC_BOTHEDGES_gc;
-  PORTC.PIN3CTRL = PORT_PULLUPEN_bm | PORT_ISC_BOTHEDGES_gc;
+  for (uint8_t i = 0; i < NUM_BUTTONS; i++)
+  {
+    allButtonPins |= buttons[i].pinMask;
+    *(buttons[i].pinCtrl) = PORT_PULLUPEN_bm | PORT_ISC_BOTHEDGES_gc;
+  }
 
-  buttonState[0] = BTN_IDLE;
-  buttonState[1] = BTN_IDLE;
-  buttonState[2] = BTN_IDLE;
+  PORTC.DIRCLR = allButtonPins;
 }
 
 static void init_leds(void)
@@ -366,86 +338,77 @@ static void init_leds(void)
   PORTB.OUTSET = LED_MSB_PIN | LED_BIT3_PIN; // Start HIGH (LEDs off - active low)
 }
 
-static void enterSleep(void)
-{
-  wdt_reset();
-  _PROTECTED_WRITE(WDT.CTRLA, WDT_PERIOD_OFF_gc); // Disable the Watchdog before sleep
-
-  while (WDT.STATUS & WDT_SYNCBUSY_bm)
-    ;
-
-  cli();
-  sleep_enable();
-  sei();
-  sleep_cpu();
-  sleep_disable();
-
-  /* * WDT Period Options (Based on 1.024kHz internal WDT clock):
-   * WDT_PERIOD_OFF_gc      - Watchdog Disabled
-   * WDT_PERIOD_8CLK_gc     - 8ms timeout
-   * WDT_PERIOD_16CLK_gc    - 16ms timeout
-   * WDT_PERIOD_32CLK_gc    - 32ms timeout
-   * WDT_PERIOD_64CLK_gc    - 64ms timeout
-   * WDT_PERIOD_128CLK_gc   - 128ms timeout
-   * WDT_PERIOD_256CLK_gc   - 256ms timeout
-   * WDT_PERIOD_512CLK_gc   - 512ms timeout
-   * WDT_PERIOD_1KCLK_gc    - 1024ms (~1.0s)
-   * WDT_PERIOD_2KCLK_gc    - 2048ms (~2.0s)
-   * WDT_PERIOD_4KCLK_gc    - 4096ms (~4.1s)
-   * WDT_PERIOD_8KCLK_gc    - 8192ms (~8.2s)
-   */
-  _PROTECTED_WRITE(WDT.CTRLA, WDT_PERIOD_128CLK_gc);
-
-  while (WDT.STATUS & WDT_SYNCBUSY_bm)
-    ;
-}
-
-static bool anyTaskPending(void)
-{
-  bool pending = false;
-
-  ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
-  {
-    for (uint8_t i = 0; i < NUM_TASKS; i++)
-    {
-      if (tasks[i].flags & TASK_PENDING)
-      {
-        pending = true;
-        break;
-      }
-    }
-  }
-
-  return pending;
-}
-
 static void haptic_trigger(void)
 {
+  // -----------------------------------------------------------------------------
+  // Generate one haptic "tick" using RTP drive
+  //
+  // Dynamics summary:
+  //  - The LRA is a resonant mechanical system (~170 Hz)
+  //  - Maximum perceived sharpness comes from:
+  //      1) Hitting resonance hard (high initial acceleration)
+  //      2) Letting it ring for ~2 cycles
+  //      3) Actively braking to suppress tail vibration
+  //
+  // For a 170 Hz LRA:
+  //  - Period ≈ 5.9 ms
+  //  - 12 ms ≈ 2 cycles → strong but non-buzzy impulse
+  //
+  // This function assumes:
+  //  - Frequency, clamp voltage, brake strength are already configured at init
+  //  - Auto-resonance is disabled (open-loop operation)
+  // -----------------------------------------------------------------------------
+
+  // Bring up I2C just-in-time to minimize idle power
   init_i2c();
+
+  // --- Wake the driver ---
+  // MODE = 0x00 exits standby and clears internal state
   i2c_write_reg_u8(DRV2605L_ADDR, DRV2605L_REG_MODE, 0x00);
-  _delay_us(250);                                         // Wait for device to exit standby before sending GO command
-  i2c_write_reg_u8(DRV2605L_ADDR, DRV2605L_REG_GO, 0x01); // Send GO command to trigger waveform playback
+
+  // Short delay ensures the analog drive stage is fully awake
+  _delay_us(250);
+
+  // --- Enter Real-Time Playback (RTP) mode ---
+  // In RTP mode:
+  //  - CONTROL1 defines the vibration frequency (≈170 Hz)
+  //  - RTPIN defines instantaneous drive amplitude
+  //
+  // This bypasses waveform libraries and gives cycle-level control
+  i2c_write_reg_u8(DRV2605L_ADDR, DRV2605L_REG_MODE, 0x05);
+  _delay_ms(1);
+
+  // --- Apply drive ---
+  // Full-scale RTP produces the strongest initial acceleration,
+  // which dominates perceived intensity for short pulses
+  i2c_write_reg_u8(DRV2605L_ADDR, DRV2605L_REG_RTPIN, 127);
+
+  // --- Let the LRA ring ---
+  // ~12 ms ≈ 2 cycles at 170 Hz
+  //
+  // Shorter:
+  //   <10 ms → sharper but weaker
+  // Longer:
+  //   >14 ms → stronger but starts to feel buzzy
+  //
+  // For a plastic watch case pressed against skin,
+  // ~11–13 ms is the perceptual sweet spot.
+  _delay_ms(12);
+
+  // --- Hard stop / active brake ---
+  // Setting RTPIN to zero engages braking (configured at init)
+  // This kills ring-down and makes the pulse feel like a "tap"
+  i2c_write_reg_u8(DRV2605L_ADDR, DRV2605L_REG_RTPIN, 0);
+
+  // --- Return to standby ---
+  // Reduces idle current between metronome ticks
+  i2c_write_reg_u8(DRV2605L_ADDR, DRV2605L_REG_MODE, 0x40);
+
+  // Shut down I2C until next use
   i2c_shutdown();
 }
 
-static void haptic_standby(void)
-{
-  init_i2c();
-  i2c_write_reg_u8(DRV2605L_ADDR, DRV2605L_REG_MODE, 0x40); // Enter standby mode
-  i2c_shutdown();
-}
-
-static void showStatus(void)
-{
-  PORTA.OUTCLR = LED_STATUS_PIN; // Active low
-}
-
-static void hideStatus(void)
-{
-  PORTA.OUTSET = LED_STATUS_PIN;
-}
-
-static void showBPM(void)
+static void show_BPM(void)
 {
   // Scale BPM by 5: display_value = BPM / 5
   uint8_t scaled = bpm / 5;
@@ -460,28 +423,21 @@ static void showBPM(void)
   (scaled & 0x10) ? (PORTB.OUTCLR = LED_MSB_PIN) : (PORTB.OUTSET = LED_MSB_PIN);
 }
 
-static void hideBPM(void)
+static void show_status(void)
 {
-  // Turn off all LEDs (active low - set HIGH)
-  PORTA.OUTSET = LED_LSB_PIN | LED_BIT1_PIN | LED_BIT2_PIN;
-  PORTB.OUTSET = LED_MSB_PIN | LED_BIT3_PIN;
+  PORTA.OUTCLR = LED_STATUS_PIN; // Active low
 }
 
-static void task_schedule(uint8_t task, uint16_t delay)
+static void schedule_task(uint8_t task, uint16_t delay)
 {
-  uint16_t due;
-
-  rtc_wait_ready();
-  due = RTC.CNT + delay;
-
   ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
   {
-    tasks[task].timeDue = due;
+    tasks[task].timeDue = RTC.CNT + delay;
     tasks[task].flags |= TASK_PENDING;
   }
 }
 
-static void task_cancel(uint8_t task)
+static void cancel_task(uint8_t task)
 {
   ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
   {
@@ -489,31 +445,97 @@ static void task_cancel(uint8_t task)
   }
 }
 
-static void play(void)
+static void task_hide_status(void *ctx)
 {
-  showStatus();
-  task_schedule(TASK_HIDE_STATUS, HAPTIC_DURATION);
-  task_schedule(TASK_HAPTIC_STANDBY, HAPTIC_DURATION);
+  (void)ctx;
+  PORTA.OUTSET = LED_STATUS_PIN;
+}
+
+static void task_hide_BPM(void *ctx)
+{
+  (void)ctx;
+  PORTA.OUTSET = LED_LSB_PIN | LED_BIT1_PIN | LED_BIT2_PIN;
+  PORTB.OUTSET = LED_MSB_PIN | LED_BIT3_PIN;
+}
+
+static void task_haptic_standby(void *ctx)
+{
+  (void)ctx;
+  init_i2c();
+  i2c_write_reg_u8(DRV2605L_ADDR, DRV2605L_REG_MODE, 0x40); // Enter standby mode
+  i2c_shutdown();
+}
+
+static void task_play(void *ctx)
+{
+  (void)ctx;
+  show_status();
+  schedule_task(TASK_HIDE_STATUS, HAPTIC_DURATION);
+  // schedule_task(TASK_HAPTIC_STANDBY, HAPTIC_DURATION);
 
   uint16_t ticks = (60UL * 1024) / bpm;
-  task_schedule(TASK_PLAY, ticks);
+  schedule_task(TASK_PLAY, ticks);
 
   haptic_trigger();
 }
 
-static void pause(void)
+static void task_pause(void *ctx)
 {
-  task_cancel(TASK_PLAY);
-  hideBPM();
-  hideStatus();
-  haptic_standby();
+  (void)ctx;
+  cancel_task(TASK_PLAY);
+  task_hide_BPM(NULL);
+  task_hide_status(NULL);
+  task_haptic_standby(NULL);
 }
 
-static void processTasks(void)
+static void task_debounce(void *ctx)
 {
+  Button *btn = (Button *)ctx;
+  bool physical_pressed = !(PORTC.IN & btn->pinMask);
+
+  if (physical_pressed)
+  {
+    if (btn->state == BTN_IDLE)
+    {
+      btn->state = BTN_PRESSED;
+      if (btn->onPress)
+        btn->onPress();
+    }
+    schedule_task(btn->taskIndex, DEBOUNCE_DELAY);
+  }
+  else
+  {
+    btn->state = BTN_IDLE;
+    PORTC.INTFLAGS = btn->pinMask;
+    *(btn->pinCtrl) = PORT_PULLUPEN_bm | PORT_ISC_BOTHEDGES_gc;
+  }
+}
+
+static void action_dec(void)
+{
+  bpm = MAX(bpm - BPM_INCREMENT, BPM_MIN);
+  show_BPM();
+  schedule_task(TASK_HIDE_BPM, LED_ON_DURATION);
+}
+
+static void action_inc(void)
+{
+  bpm = MIN(bpm + BPM_INCREMENT, BPM_MAX);
+  show_BPM();
+  schedule_task(TASK_HIDE_BPM, LED_ON_DURATION);
+}
+
+static void action_play(void)
+{
+  bool isPlaying = (tasks[TASK_PLAY].flags & TASK_PENDING);
+  schedule_task(isPlaying ? TASK_PAUSE : TASK_PLAY, 0);
+}
+
+static bool process_tasks(void)
+{
+  bool ranAny = false;
   uint16_t now;
 
-  rtc_wait_ready();
   ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
   {
     now = RTC.CNT;
@@ -522,7 +544,6 @@ static void processTasks(void)
   for (uint8_t i = 0; i < NUM_TASKS; i++)
   {
     bool run = false;
-
     ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
     {
       if ((tasks[i].flags & TASK_PENDING) &&
@@ -534,28 +555,44 @@ static void processTasks(void)
     }
 
     if (run)
-      tasks[i].callback();
+    {
+      tasks[i].callback(tasks[i].context);
+      ranAny = true;
+    }
   }
+
+  return ranAny;
 }
 
-static void prepareNextWakeup(void)
+static bool is_any_task_pending(void)
+{
+  ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
+  {
+    for (uint8_t i = 0; i < NUM_TASKS; i++)
+    {
+      if (tasks[i].flags & TASK_PENDING)
+      {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+static void prepare_next_wakeup(void)
 {
   uint16_t now;
   uint16_t next = 0;
   bool found = false;
 
-  rtc_wait_ready();
   ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
   {
     now = RTC.CNT;
-
     for (uint8_t i = 0; i < NUM_TASKS; i++)
     {
       if (tasks[i].flags & TASK_PENDING)
       {
-        if (!found ||
-            (int16_t)(tasks[i].timeDue - now) <
-                (int16_t)(next - now))
+        if (!found || (int16_t)(tasks[i].timeDue - now) < (int16_t)(next - now))
         {
           next = tasks[i].timeDue;
           found = true;
@@ -565,104 +602,19 @@ static void prepareNextWakeup(void)
 
     if (found)
     {
-      RTC.INTCTRL = 0;
-      RTC.CMP = MAX(next, now + RTC_MIN_SAFE_MARGIN);
+      RTC.CMP = next;
+
+      while (RTC.STATUS & RTC_CMPBUSY_bm)
+        ;
+
+      RTC.INTFLAGS = RTC_CMP_bm;
       RTC.INTCTRL = RTC_CMP_bm;
     }
-  }
-}
-
-static void buttonDebounce(uint8_t i)
-{
-  uint8_t mask = buttons[i].pinMask;
-  uint8_t ctrl = buttons[i].pinCtrlIndex;
-
-  bool pressed = !(PORTC.IN & mask);
-
-  if (pressed && buttonState[i] == BTN_IDLE)
-  {
-    // Stable press detected
-    buttonState[i] = BTN_PRESSED;
-
-    // Perform action
-    switch (i)
+    else
     {
-    case 0: // Decrease BPM
-      bpm = MAX(bpm - BPM_INCREMENT, BPM_MIN);
-      showBPM();
-      task_schedule(TASK_HIDE_BPM, LED_ON_DURATION);
-      break;
-
-    case 1: // Play/Pause toggle
-      if (tasks[TASK_PLAY].flags & TASK_PENDING)
-      {
-        // Currently playing → pause
-        task_schedule(TASK_PAUSE, 1);
-      }
-      else
-      {
-        // Currently paused → start playing
-        showBPM();
-        task_schedule(TASK_HIDE_BPM, LED_ON_DURATION);
-        task_schedule(TASK_PLAY, 1);
-      }
-      break;
-
-    case 2: // Increase BPM
-      bpm = MIN(bpm + BPM_INCREMENT, BPM_MAX);
-      showBPM();
-      task_schedule(TASK_HIDE_BPM, LED_ON_DURATION);
-      break;
+      RTC.INTCTRL = 0;
     }
-
-    // Keep polling until release
-    task_schedule(buttons[i].task, DEBOUNCE_DELAY);
   }
-  else if (!pressed && buttonState[i] == BTN_PRESSED)
-  {
-    // Stable release detected
-    buttonState[i] = BTN_IDLE;
-
-    // Re-arm interrupt
-    (&PORTC.PIN0CTRL)[ctrl] =
-        PORT_PULLUPEN_bm | PORT_ISC_BOTHEDGES_gc;
-  }
-  else
-  {
-    // Still bouncing or still held → check again
-    task_schedule(buttons[i].task, DEBOUNCE_DELAY);
-  }
-}
-
-static void button1Task(void) { buttonDebounce(0); }
-static void button2Task(void) { buttonDebounce(1); }
-static void button3Task(void) { buttonDebounce(2); }
-
-static void init_tasks(void)
-{
-  tasks[TASK_PLAY].callback = play;
-  tasks[TASK_PLAY].flags = 0;
-
-  tasks[TASK_PAUSE].callback = pause;
-  tasks[TASK_PAUSE].flags = 0;
-
-  tasks[TASK_HAPTIC_STANDBY].callback = haptic_standby;
-  tasks[TASK_HAPTIC_STANDBY].flags = 0;
-
-  tasks[TASK_HIDE_BPM].callback = hideBPM;
-  tasks[TASK_HIDE_BPM].flags = 0;
-
-  tasks[TASK_HIDE_STATUS].callback = hideStatus;
-  tasks[TASK_HIDE_STATUS].flags = 0;
-
-  tasks[TASK_BUTTON1_DEBOUNCE].callback = button1Task;
-  tasks[TASK_BUTTON1_DEBOUNCE].flags = 0;
-
-  tasks[TASK_BUTTON2_DEBOUNCE].callback = button2Task;
-  tasks[TASK_BUTTON2_DEBOUNCE].flags = 0;
-
-  tasks[TASK_BUTTON3_DEBOUNCE].callback = button3Task;
-  tasks[TASK_BUTTON3_DEBOUNCE].flags = 0;
 }
 
 ISR(RTC_CNT_vect)
@@ -675,47 +627,49 @@ ISR(PORTC_PORT_vect)
   uint8_t flags = PORTC.INTFLAGS;
   PORTC.INTFLAGS = flags;
 
-  if (flags & BUTTON1_PIN)
+  for (uint8_t i = 0; i < NUM_BUTTONS; i++)
   {
-    PORTC.PIN1CTRL = PORT_PULLUPEN_bm | PORT_ISC_INTDISABLE_gc;
-    task_schedule(TASK_BUTTON1_DEBOUNCE, DEBOUNCE_DELAY);
-  }
-
-  if (flags & BUTTON2_PIN)
-  {
-    PORTC.PIN2CTRL = PORT_PULLUPEN_bm | PORT_ISC_INTDISABLE_gc;
-    task_schedule(TASK_BUTTON2_DEBOUNCE, DEBOUNCE_DELAY);
-  }
-
-  if (flags & BUTTON3_PIN)
-  {
-    PORTC.PIN3CTRL = PORT_PULLUPEN_bm | PORT_ISC_INTDISABLE_gc;
-    task_schedule(TASK_BUTTON3_DEBOUNCE, DEBOUNCE_DELAY);
+    if (flags & buttons[i].pinMask)
+    {
+      *(buttons[i].pinCtrl) = PORT_PULLUPEN_bm | PORT_ISC_INTDISABLE_gc;
+      schedule_task(buttons[i].taskIndex, DEBOUNCE_DELAY);
+    }
   }
 }
 
 int main(void)
 {
-  RSTCTRL.RSTFR = 0xFF;
-
   init_clock();
   init_rtc();
-  init_all_pins_low_power();
+  init_unused_pins_low_power();
   init_buttons();
   init_leds();
-  init_tasks();
   init_haptic_driver();
 
   sei();
 
   while (1)
   {
-    processTasks();
-    prepareNextWakeup();
-    set_sleep_mode((anyTaskPending())
+    while (process_tasks())
+      ;
+
+    prepare_next_wakeup();
+
+    set_sleep_mode(is_any_task_pending()
                        ? SLEEP_MODE_STANDBY
                        : SLEEP_MODE_PWR_DOWN);
-    enterSleep();
+
+    cli();
+    if (process_tasks())
+    {
+      sei();
+      continue;
+    }
+
+    sleep_enable();
+    sei();
+    sleep_cpu();
+    sleep_disable();
   }
 
   return 0;
