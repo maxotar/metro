@@ -1,4 +1,4 @@
-26769099119761893
+26776178254073566
 ATTINY1616-MR
 VQFN20_REB_MCH
 
@@ -20,6 +20,27 @@ ATTINY1616-MN
 0
 21
 21
+ATTINY1616_SN
+SOIC20_300MIL_MCH
+
+ATTINY1616-SN 
+0
+20
+20
+ATTINY1616_SN
+SOIC20_300MIL_MCH-L
+
+ATTINY1616-SN 
+0
+20
+20
+ATTINY1616_SN
+SOIC20_300MIL_MCH-M
+
+ATTINY1616-SN 
+0
+20
+20
 Audio_Module
 Reverb_BTDR-1H
 Digital Reverberation Unit, http://www.belton.co.kr/inc/downfile.php?seq=17&file=pdf (footprint from http://www.uk-electronic.de/PDF/BTDR-1.pdf)
@@ -61396,6 +61417,13 @@ One digit LED 7 segment SA39-11 SC39-11 SA39-12 SC39-12
 0
 10
 10
+EVQ-P7C01P
+SW_EVQ-P7C01P
+
+
+0
+4
+4
 Ferrite_THT
 LairdTech_28C0236-0JW-10
 Ferrite, vertical, LairdTech 28C0236-0JW-10, https://assets.lairdtech.com/home/brandworld/files/28C0236-0JW-10.pdf, JW Miller core https://www.bourns.com/products/magnetic-products/j.w.-miller-through-hole-ferrite-beads-emi-filters
@@ -70591,6 +70619,13 @@ LED_THT
 LED_VCCLite_5381H7_6.35x6.35mm
 Yellow 5381 Series LED VCCLite https://vcclite.com/wp-content/uploads/wpallimport/files/files/5381Series.pdf http://static.vcclite.com/pdf/Mounting%20Hole%20Pattern%202.pdf
 Yellow 5381 Series LED
+0
+2
+2
+LTST-C230KRKT
+LED_LTST-C230KRKT
+
+
 0
 2
 2
@@ -99399,13 +99434,6 @@ Logo WEEE
 0
 0
 0
-TS-1088-AR02016
-SW_TS-1088-AR02016
-
-
-0
-2
-2
 TerminalBlock
 TerminalBlock_MaiXu_MX126-5.0-02P_1x02_P5.00mm
 terminal block MaiXu MX126-5.0-02P, 2 pins, pitch 5mm, size 10.5x7.8mm, drill diameter 1.3mm, pad diameter 2.8mm, https://www.lcsc.com/datasheet/lcsc_datasheet_2309150913_MAX-MX126-5-0-03P-GN01-Cu-S-A_C5188435.pdf, script-generated using https://gitlab.com/kicad/libraries/kicad-footprint-generator/-/tree/master/scripts/TerminalBlock_MaiXu
