@@ -1,4 +1,4 @@
-26776178255067806
+26777948006199646
 ATTINY1616-MR
 VQFN20_REB_MCH
 
@@ -70619,6 +70619,13 @@ LED_THT
 LED_VCCLite_5381H7_6.35x6.35mm
 Yellow 5381 Series LED VCCLite https://vcclite.com/wp-content/uploads/wpallimport/files/files/5381Series.pdf http://static.vcclite.com/pdf/Mounting%20Hole%20Pattern%202.pdf
 Yellow 5381 Series LED
+0
+2
+2
+LTST-C230KRKT
+Custom LTST-C230KRKT
+downfacing reverse mount led, https://optoelectronics.liteon.com/upload/download/DS22-2009-0219/LTST-C235KGKRKT.pdf
+LED reverse down facing
 0
 2
 2

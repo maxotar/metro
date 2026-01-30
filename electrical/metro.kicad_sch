@@ -1346,6 +1346,189 @@
 			)
 			(embedded_fonts no)
 		)
+		(symbol "Device:LED"
+			(pin_numbers
+				(hide yes)
+			)
+			(pin_names
+				(offset 1.016)
+				(hide yes)
+			)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "D"
+				(at 0 2.54 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Value" "LED"
+				(at 0 -2.54 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Footprint" ""
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "Datasheet" "~"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "Description" "Light emitting diode"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "Sim.Pins" "1=K 2=A"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "ki_keywords" "LED diode"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "ki_fp_filters" "LED* LED_SMD:* LED_THT:*"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(symbol "LED_0_1"
+				(polyline
+					(pts
+						(xy -3.048 -0.762) (xy -4.572 -2.286) (xy -3.81 -2.286) (xy -4.572 -2.286) (xy -4.572 -1.524)
+					)
+					(stroke
+						(width 0)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(polyline
+					(pts
+						(xy -1.778 -0.762) (xy -3.302 -2.286) (xy -2.54 -2.286) (xy -3.302 -2.286) (xy -3.302 -1.524)
+					)
+					(stroke
+						(width 0)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(polyline
+					(pts
+						(xy -1.27 0) (xy 1.27 0)
+					)
+					(stroke
+						(width 0)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(polyline
+					(pts
+						(xy -1.27 -1.27) (xy -1.27 1.27)
+					)
+					(stroke
+						(width 0.254)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(polyline
+					(pts
+						(xy 1.27 -1.27) (xy 1.27 1.27) (xy -1.27 0) (xy 1.27 -1.27)
+					)
+					(stroke
+						(width 0.254)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+			)
+			(symbol "LED_1_1"
+				(pin passive line
+					(at -3.81 0 0)
+					(length 2.54)
+					(name "K"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "1"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin passive line
+					(at 3.81 0 180)
+					(length 2.54)
+					(name "A"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "2"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+			)
+			(embedded_fonts no)
+		)
 		(symbol "Device:R"
 			(pin_numbers
 				(hide yes)
@@ -2023,252 +2206,6 @@
 						)
 					)
 					(number "2_2"
-						(effects
-							(font
-								(size 1.016 1.016)
-							)
-						)
-					)
-				)
-			)
-			(embedded_fonts no)
-		)
-		(symbol "LTST-C230KRKT:LTST-C230KRKT"
-			(pin_names
-				(offset 1.016)
-			)
-			(exclude_from_sim no)
-			(in_bom yes)
-			(on_board yes)
-			(property "Reference" "D"
-				(at -3.0988 4.4958 0)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-					(justify left bottom)
-				)
-			)
-			(property "Value" "LTST-C230KRKT"
-				(at -3.556 -3.302 0)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-					(justify left bottom)
-				)
-			)
-			(property "Footprint" "LTST-C230KRKT:LED_LTST-C230KRKT"
-				(at 0 0 0)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-					(justify bottom)
-					(hide yes)
-				)
-			)
-			(property "Datasheet" "https://www.lcsc.com/datasheet/C125107.pdf"
-				(at 0 0 0)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-					(hide yes)
-				)
-			)
-			(property "Description" "Red 639nm LED Indication - Discrete 2V 1206"
-				(at 0 0 0)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-					(hide yes)
-				)
-			)
-			(property "LCSC PN" "C125107"
-				(at 0 0 0)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-					(hide yes)
-				)
-			)
-			(symbol "LTST-C230KRKT_0_0"
-				(polyline
-					(pts
-						(xy -2.54 1.524) (xy -2.54 0)
-					)
-					(stroke
-						(width 0.254)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(polyline
-					(pts
-						(xy -2.54 0) (xy -5.08 0)
-					)
-					(stroke
-						(width 0.1524)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(polyline
-					(pts
-						(xy -2.54 0) (xy -2.54 -1.524)
-					)
-					(stroke
-						(width 0.254)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(polyline
-					(pts
-						(xy -2.54 -1.524) (xy 0 0)
-					)
-					(stroke
-						(width 0.254)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(polyline
-					(pts
-						(xy -1.143 3.683) (xy -0.5715 3.175) (xy -0.1905 4.191) (xy -1.143 3.683)
-					)
-					(stroke
-						(width 0.1524)
-						(type default)
-					)
-					(fill
-						(type outline)
-					)
-				)
-				(polyline
-					(pts
-						(xy -0.3556 4.0386) (xy -2.1336 2.0066)
-					)
-					(stroke
-						(width 0.254)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(polyline
-					(pts
-						(xy 0 1.524) (xy 0 0)
-					)
-					(stroke
-						(width 0.254)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(polyline
-					(pts
-						(xy 0 0) (xy -2.54 1.524)
-					)
-					(stroke
-						(width 0.254)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(polyline
-					(pts
-						(xy 0 0) (xy 0 -1.524)
-					)
-					(stroke
-						(width 0.254)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(polyline
-					(pts
-						(xy 0.127 3.6195) (xy 0.6985 3.1115) (xy 1.0795 4.191) (xy 0.127 3.6195)
-					)
-					(stroke
-						(width 0.1524)
-						(type default)
-					)
-					(fill
-						(type outline)
-					)
-				)
-				(polyline
-					(pts
-						(xy 0.889 3.937) (xy -0.889 1.905)
-					)
-					(stroke
-						(width 0.254)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(polyline
-					(pts
-						(xy 2.54 0) (xy 0 0)
-					)
-					(stroke
-						(width 0.1524)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(pin passive line
-					(at -7.62 0 0)
-					(length 2.54)
-					(name "~"
-						(effects
-							(font
-								(size 1.016 1.016)
-							)
-						)
-					)
-					(number "A"
-						(effects
-							(font
-								(size 1.016 1.016)
-							)
-						)
-					)
-				)
-				(pin passive line
-					(at 5.08 0 180)
-					(length 2.54)
-					(name "~"
-						(effects
-							(font
-								(size 1.016 1.016)
-							)
-						)
-					)
-					(number "C"
 						(effects
 							(font
 								(size 1.016 1.016)
@@ -3978,6 +3915,16 @@
 	)
 	(wire
 		(pts
+			(xy 378.46 54.61) (xy 378.46 49.53)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "58d2a4ef-557e-4b43-822f-5a902238608d")
+	)
+	(wire
+		(pts
 			(xy 86.36 52.07) (xy 86.36 63.5)
 		)
 		(stroke
@@ -4188,6 +4135,16 @@
 	)
 	(wire
 		(pts
+			(xy 99.06 83.82) (xy 99.06 91.44)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "8ada2b23-c13c-48d0-b1c5-7dc2b100d2f4")
+	)
+	(wire
+		(pts
 			(xy 99.06 52.07) (xy 99.06 55.88)
 		)
 		(stroke
@@ -4225,6 +4182,16 @@
 			(type default)
 		)
 		(uuid "94de23e0-755c-45e7-a92d-d2d8c48a964d")
+	)
+	(wire
+		(pts
+			(xy 327.66 54.61) (xy 327.66 49.53)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "99559175-1498-4554-8155-633985166c27")
 	)
 	(wire
 		(pts
@@ -4325,6 +4292,26 @@
 			(type default)
 		)
 		(uuid "afb82995-2038-4bf3-b332-26f4e13c3258")
+	)
+	(wire
+		(pts
+			(xy 340.36 54.61) (xy 340.36 49.53)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "b1bb5f02-fbda-49b8-b60d-22d490f3c9b6")
+	)
+	(wire
+		(pts
+			(xy 365.76 54.61) (xy 365.76 49.53)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "b1c52f56-017d-4a5f-89aa-ab0e66db1e3d")
 	)
 	(wire
 		(pts
@@ -4528,6 +4515,16 @@
 	)
 	(wire
 		(pts
+			(xy 353.06 54.61) (xy 353.06 49.53)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "da6a42e2-9061-4c82-9fb6-58047a37f4bb")
+	)
+	(wire
+		(pts
 			(xy 63.5 181.61) (xy 64.77 181.61)
 		)
 		(stroke
@@ -4568,7 +4565,7 @@
 	)
 	(wire
 		(pts
-			(xy 101.6 87.63) (xy 101.6 91.44)
+			(xy 99.06 91.44) (xy 96.52 91.44)
 		)
 		(stroke
 			(width 0)
@@ -12459,45 +12456,34 @@
 		)
 	)
 	(symbol
-		(lib_id "LTST-C230KRKT:LTST-C230KRKT")
-		(at 327.66 57.15 270)
+		(lib_id "Device:LED")
+		(at 327.66 45.72 90)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
 		(on_board yes)
 		(dnp no)
-		(fields_autoplaced yes)
 		(uuid "0b638669-4dbb-4df4-bc6c-db85d2636e13")
 		(property "Reference" "D1"
-			(at 332.74 54.6099 90)
+			(at 331.47 46.0374 90)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
-				(justify left)
+				(justify right)
 			)
 		)
 		(property "Value" "Red"
-			(at 332.74 57.1499 90)
+			(at 331.47 48.5774 90)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
-				(justify left)
+				(justify right)
 			)
 		)
-		(property "Footprint" "LTST-C230KRKT:LED_LTST-C230KRKT"
-			(at 327.66 57.15 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify bottom)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" "https://www.lcsc.com/datasheet/C125107.pdf"
-			(at 327.66 57.15 0)
+		(property "Footprint" "LTST-C230KRKT:Custom LTST-C230KRKT"
+			(at 327.66 45.72 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -12505,8 +12491,17 @@
 				(hide yes)
 			)
 		)
-		(property "Description" "Red 639nm LED Indication - Discrete 2V 1206"
-			(at 327.66 57.15 0)
+		(property "Datasheet" "~"
+			(at 327.66 45.72 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Light emitting diode"
+			(at 327.66 45.72 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -12515,7 +12510,7 @@
 			)
 		)
 		(property "LCSC PN" "C125107"
-			(at 327.66 57.15 0)
+			(at 327.66 45.72 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -12523,10 +12518,19 @@
 				(hide yes)
 			)
 		)
-		(pin "C"
+		(property "Sim.Pins" "1=K 2=A"
+			(at 327.66 45.72 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
 			(uuid "701ed38f-e324-4b04-ad52-21d81a3a28cd")
 		)
-		(pin "A"
+		(pin "2"
 			(uuid "c14d586f-67d7-4da7-b098-b877aa592a53")
 		)
 		(instances
@@ -13717,45 +13721,34 @@
 		)
 	)
 	(symbol
-		(lib_id "LTST-C230KRKT:LTST-C230KRKT")
-		(at 353.06 57.15 270)
+		(lib_id "Device:LED")
+		(at 353.06 45.72 90)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
 		(on_board yes)
 		(dnp no)
-		(fields_autoplaced yes)
 		(uuid "5a67324f-af0f-4569-9664-96e73488b1c0")
 		(property "Reference" "D3"
-			(at 358.14 54.6099 90)
+			(at 356.87 46.0374 90)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
-				(justify left)
+				(justify right)
 			)
 		)
 		(property "Value" "Red"
-			(at 358.14 57.1499 90)
+			(at 356.87 48.5774 90)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
-				(justify left)
+				(justify right)
 			)
 		)
-		(property "Footprint" "LTST-C230KRKT:LED_LTST-C230KRKT"
-			(at 353.06 57.15 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify bottom)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" "https://www.lcsc.com/datasheet/C125107.pdf"
-			(at 353.06 57.15 0)
+		(property "Footprint" "LTST-C230KRKT:Custom LTST-C230KRKT"
+			(at 353.06 45.72 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -13763,8 +13756,17 @@
 				(hide yes)
 			)
 		)
-		(property "Description" "Red 639nm LED Indication - Discrete 2V 1206"
-			(at 353.06 57.15 0)
+		(property "Datasheet" "~"
+			(at 353.06 45.72 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Light emitting diode"
+			(at 353.06 45.72 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -13773,7 +13775,7 @@
 			)
 		)
 		(property "LCSC PN" "C125107"
-			(at 353.06 57.15 0)
+			(at 353.06 45.72 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -13781,10 +13783,19 @@
 				(hide yes)
 			)
 		)
-		(pin "C"
+		(property "Sim.Pins" "1=K 2=A"
+			(at 353.06 45.72 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
 			(uuid "9b198306-05e2-462a-9e1e-f7785750c96f")
 		)
-		(pin "A"
+		(pin "2"
 			(uuid "21d62c61-4e40-4c2a-aa7d-e5ac37f0780f")
 		)
 		(instances
@@ -13879,7 +13890,7 @@
 	)
 	(symbol
 		(lib_id "power:+5V")
-		(at 101.6 87.63 0)
+		(at 99.06 83.82 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -13887,7 +13898,7 @@
 		(dnp no)
 		(uuid "5eb995ff-c67c-40a4-9f00-5bfda4161e36")
 		(property "Reference" "#PWR06"
-			(at 101.6 91.44 0)
+			(at 99.06 87.63 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -13896,7 +13907,7 @@
 			)
 		)
 		(property "Value" "+VBUS"
-			(at 98.552 82.804 0)
+			(at 96.012 78.994 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -13905,7 +13916,7 @@
 			)
 		)
 		(property "Footprint" ""
-			(at 101.6 87.63 0)
+			(at 99.06 83.82 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -13914,7 +13925,7 @@
 			)
 		)
 		(property "Datasheet" ""
-			(at 101.6 87.63 0)
+			(at 99.06 83.82 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -13923,7 +13934,7 @@
 			)
 		)
 		(property "Description" "Power symbol creates a global label with name \"+VBUS\""
-			(at 101.6 87.63 0)
+			(at 99.06 83.82 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -13944,8 +13955,8 @@
 		)
 	)
 	(symbol
-		(lib_id "LTST-C230KRKT:LTST-C230KRKT")
-		(at 86.36 91.44 180)
+		(lib_id "Device:LED")
+		(at 92.71 91.44 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -13954,7 +13965,7 @@
 		(fields_autoplaced yes)
 		(uuid "63c05f0b-c5b9-4db0-a874-61f4698e4952")
 		(property "Reference" "D6"
-			(at 87.63 85.09 0)
+			(at 91.1225 85.09 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -13962,25 +13973,15 @@
 			)
 		)
 		(property "Value" "Red"
-			(at 87.63 87.63 0)
+			(at 91.1225 87.63 0)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
 			)
 		)
-		(property "Footprint" "LTST-C230KRKT:LED_LTST-C230KRKT"
-			(at 86.36 91.44 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify bottom)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" "https://www.lcsc.com/datasheet/C125107.pdf"
-			(at 86.36 91.44 0)
+		(property "Footprint" "LTST-C230KRKT:Custom LTST-C230KRKT"
+			(at 92.71 91.44 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -13988,8 +13989,17 @@
 				(hide yes)
 			)
 		)
-		(property "Description" "Red 639nm LED Indication - Discrete 2V 1206"
-			(at 86.36 91.44 0)
+		(property "Datasheet" "~"
+			(at 92.71 91.44 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Light emitting diode"
+			(at 92.71 91.44 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -13998,7 +14008,7 @@
 			)
 		)
 		(property "LCSC PN" "C125107"
-			(at 86.36 91.44 0)
+			(at 92.71 91.44 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -14006,10 +14016,19 @@
 				(hide yes)
 			)
 		)
-		(pin "C"
+		(property "Sim.Pins" "1=K 2=A"
+			(at 92.71 91.44 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "2"
 			(uuid "cb7ee78d-a99b-4ea9-bc66-2ec806164eb3")
 		)
-		(pin "A"
+		(pin "1"
 			(uuid "329eb8be-478e-425e-8124-4231d123187f")
 		)
 		(instances
@@ -14234,45 +14253,34 @@
 		)
 	)
 	(symbol
-		(lib_id "LTST-C230KRKT:LTST-C230KRKT")
-		(at 365.76 57.15 270)
+		(lib_id "Device:LED")
+		(at 365.76 45.72 90)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
 		(on_board yes)
 		(dnp no)
-		(fields_autoplaced yes)
 		(uuid "7c97bd0e-b734-4543-b552-ed4166594e6b")
 		(property "Reference" "D4"
-			(at 370.84 54.6099 90)
+			(at 369.57 46.0374 90)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
-				(justify left)
+				(justify right)
 			)
 		)
 		(property "Value" "Red"
-			(at 370.84 57.1499 90)
+			(at 369.57 48.5774 90)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
-				(justify left)
+				(justify right)
 			)
 		)
-		(property "Footprint" "LTST-C230KRKT:LED_LTST-C230KRKT"
-			(at 365.76 57.15 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify bottom)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" "https://www.lcsc.com/datasheet/C125107.pdf"
-			(at 365.76 57.15 0)
+		(property "Footprint" "LTST-C230KRKT:Custom LTST-C230KRKT"
+			(at 365.76 45.72 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -14280,8 +14288,17 @@
 				(hide yes)
 			)
 		)
-		(property "Description" "Red 639nm LED Indication - Discrete 2V 1206"
-			(at 365.76 57.15 0)
+		(property "Datasheet" "~"
+			(at 365.76 45.72 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Light emitting diode"
+			(at 365.76 45.72 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -14290,7 +14307,7 @@
 			)
 		)
 		(property "LCSC PN" "C125107"
-			(at 365.76 57.15 0)
+			(at 365.76 45.72 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -14298,10 +14315,19 @@
 				(hide yes)
 			)
 		)
-		(pin "A"
+		(property "Sim.Pins" "1=K 2=A"
+			(at 365.76 45.72 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "2"
 			(uuid "3c5b3ed8-408f-4752-bdb0-e8cfb3e5c391")
 		)
-		(pin "C"
+		(pin "1"
 			(uuid "9fb25817-66c2-46b6-9db9-6f7a5baa12ec")
 		)
 		(instances
@@ -14381,7 +14407,7 @@
 	)
 	(symbol
 		(lib_id "Device:R")
-		(at 340.36 45.72 0)
+		(at 340.36 58.42 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -14390,7 +14416,7 @@
 		(fields_autoplaced yes)
 		(uuid "8457c494-948b-4705-a7c2-e3dca84ca496")
 		(property "Reference" "R2"
-			(at 342.9 44.4499 0)
+			(at 342.9 57.1499 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -14399,7 +14425,7 @@
 			)
 		)
 		(property "Value" "2k2"
-			(at 342.9 46.9899 0)
+			(at 342.9 59.6899 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -14408,7 +14434,7 @@
 			)
 		)
 		(property "Footprint" "Resistor_SMD:R_0402_1005Metric"
-			(at 338.582 45.72 90)
+			(at 338.582 58.42 90)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -14417,7 +14443,7 @@
 			)
 		)
 		(property "Datasheet" "~"
-			(at 340.36 45.72 0)
+			(at 340.36 58.42 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -14426,7 +14452,7 @@
 			)
 		)
 		(property "Description" "Resistor"
-			(at 340.36 45.72 0)
+			(at 340.36 58.42 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -14451,7 +14477,7 @@
 	)
 	(symbol
 		(lib_id "Device:R")
-		(at 378.46 45.72 0)
+		(at 378.46 58.42 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -14459,7 +14485,7 @@
 		(dnp no)
 		(uuid "84f2df09-dbfa-4df7-b7f3-43e3834cf92a")
 		(property "Reference" "R5"
-			(at 381 44.4499 0)
+			(at 381 57.1499 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -14468,7 +14494,7 @@
 			)
 		)
 		(property "Value" "2k2"
-			(at 381 46.9899 0)
+			(at 381 59.6899 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -14477,7 +14503,7 @@
 			)
 		)
 		(property "Footprint" "Resistor_SMD:R_0402_1005Metric"
-			(at 376.682 45.72 90)
+			(at 376.682 58.42 90)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -14486,7 +14512,7 @@
 			)
 		)
 		(property "Datasheet" "~"
-			(at 378.46 45.72 0)
+			(at 378.46 58.42 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -14495,7 +14521,7 @@
 			)
 		)
 		(property "Description" "Resistor"
-			(at 378.46 45.72 0)
+			(at 378.46 58.42 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -14590,7 +14616,7 @@
 	)
 	(symbol
 		(lib_id "Device:R")
-		(at 97.79 91.44 90)
+		(at 85.09 91.44 90)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -14598,7 +14624,7 @@
 		(dnp no)
 		(uuid "8bfe10f3-e7f9-4f47-9558-fa35c5b6e2ea")
 		(property "Reference" "R7"
-			(at 96.5199 88.9 0)
+			(at 83.8199 88.9 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -14607,7 +14633,7 @@
 			)
 		)
 		(property "Value" "2k2"
-			(at 99.0599 88.9 0)
+			(at 86.3599 88.9 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -14616,7 +14642,7 @@
 			)
 		)
 		(property "Footprint" "Resistor_SMD:R_0402_1005Metric"
-			(at 97.79 93.218 90)
+			(at 85.09 93.218 90)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -14625,7 +14651,7 @@
 			)
 		)
 		(property "Datasheet" "~"
-			(at 97.79 91.44 0)
+			(at 85.09 91.44 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -14634,7 +14660,7 @@
 			)
 		)
 		(property "Description" "Resistor"
-			(at 97.79 91.44 0)
+			(at 85.09 91.44 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -14790,8 +14816,8 @@
 		)
 	)
 	(symbol
-		(lib_id "LTST-C230KRKT:LTST-C230KRKT")
-		(at 378.46 57.15 270)
+		(lib_id "Device:LED")
+		(at 378.46 45.72 90)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -14800,35 +14826,25 @@
 		(fields_autoplaced yes)
 		(uuid "92de8d31-a050-44ce-aa75-cd7a02577d10")
 		(property "Reference" "D5"
-			(at 383.54 54.6099 90)
+			(at 382.27 46.0374 90)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
-				(justify left)
+				(justify right)
 			)
 		)
 		(property "Value" "Red"
-			(at 383.54 57.1499 90)
+			(at 382.27 48.5774 90)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
-				(justify left)
+				(justify right)
 			)
 		)
-		(property "Footprint" "LTST-C230KRKT:LED_LTST-C230KRKT"
-			(at 378.46 57.15 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify bottom)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" "https://www.lcsc.com/datasheet/C125107.pdf"
-			(at 378.46 57.15 0)
+		(property "Footprint" "LTST-C230KRKT:Custom LTST-C230KRKT"
+			(at 378.46 45.72 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -14836,8 +14852,17 @@
 				(hide yes)
 			)
 		)
-		(property "Description" "Red 639nm LED Indication - Discrete 2V 1206"
-			(at 378.46 57.15 0)
+		(property "Datasheet" "~"
+			(at 378.46 45.72 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Light emitting diode"
+			(at 378.46 45.72 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -14846,7 +14871,7 @@
 			)
 		)
 		(property "LCSC PN" "C125107"
-			(at 378.46 57.15 0)
+			(at 378.46 45.72 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -14854,10 +14879,19 @@
 				(hide yes)
 			)
 		)
-		(pin "C"
+		(property "Sim.Pins" "1=K 2=A"
+			(at 378.46 45.72 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "2"
 			(uuid "a5c2f13d-20f9-4eb7-8a77-1c8728b6d448")
 		)
-		(pin "A"
+		(pin "1"
 			(uuid "41b51de3-8696-489e-b7d5-56fd1299c4c5")
 		)
 		(instances
@@ -15270,7 +15304,7 @@
 	)
 	(symbol
 		(lib_id "Device:R")
-		(at 365.76 45.72 0)
+		(at 365.76 58.42 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -15278,7 +15312,7 @@
 		(dnp no)
 		(uuid "b2ab4a97-3073-456b-b052-33c0a10d73de")
 		(property "Reference" "R4"
-			(at 368.3 44.4499 0)
+			(at 368.3 57.1499 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -15287,7 +15321,7 @@
 			)
 		)
 		(property "Value" "2k2"
-			(at 368.3 46.9899 0)
+			(at 368.3 59.6899 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -15296,7 +15330,7 @@
 			)
 		)
 		(property "Footprint" "Resistor_SMD:R_0402_1005Metric"
-			(at 363.982 45.72 90)
+			(at 363.982 58.42 90)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -15305,7 +15339,7 @@
 			)
 		)
 		(property "Datasheet" "~"
-			(at 365.76 45.72 0)
+			(at 365.76 58.42 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -15314,7 +15348,7 @@
 			)
 		)
 		(property "Description" "Resistor"
-			(at 365.76 45.72 0)
+			(at 365.76 58.42 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -15804,45 +15838,34 @@
 		)
 	)
 	(symbol
-		(lib_id "LTST-C230KRKT:LTST-C230KRKT")
-		(at 340.36 57.15 270)
+		(lib_id "Device:LED")
+		(at 340.36 45.72 90)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
 		(on_board yes)
 		(dnp no)
-		(fields_autoplaced yes)
 		(uuid "cf3bf2f0-a81d-4084-aad3-70971c2ba944")
 		(property "Reference" "D2"
-			(at 345.44 54.6099 90)
+			(at 344.17 46.0374 90)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
-				(justify left)
+				(justify right)
 			)
 		)
 		(property "Value" "Red"
-			(at 345.44 57.1499 90)
+			(at 344.17 48.5774 90)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
-				(justify left)
+				(justify right)
 			)
 		)
-		(property "Footprint" "LTST-C230KRKT:LED_LTST-C230KRKT"
-			(at 340.36 57.15 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify bottom)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" "https://www.lcsc.com/datasheet/C125107.pdf"
-			(at 340.36 57.15 0)
+		(property "Footprint" "LTST-C230KRKT:Custom LTST-C230KRKT"
+			(at 340.36 45.72 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -15850,8 +15873,17 @@
 				(hide yes)
 			)
 		)
-		(property "Description" "Red 639nm LED Indication - Discrete 2V 1206"
-			(at 340.36 57.15 0)
+		(property "Datasheet" "~"
+			(at 340.36 45.72 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Light emitting diode"
+			(at 340.36 45.72 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -15860,7 +15892,7 @@
 			)
 		)
 		(property "LCSC PN" "C125107"
-			(at 340.36 57.15 0)
+			(at 340.36 45.72 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -15868,10 +15900,19 @@
 				(hide yes)
 			)
 		)
-		(pin "A"
+		(property "Sim.Pins" "1=K 2=A"
+			(at 340.36 45.72 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
 			(uuid "0efdd2ab-1cbe-494e-94dd-9fd4765c0875")
 		)
-		(pin "C"
+		(pin "2"
 			(uuid "95cfd1c9-70f9-4b89-8813-27a435fdfe73")
 		)
 		(instances
@@ -15885,7 +15926,7 @@
 	)
 	(symbol
 		(lib_id "Device:R")
-		(at 353.06 45.72 0)
+		(at 353.06 58.42 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -15893,7 +15934,7 @@
 		(dnp no)
 		(uuid "d087ecb0-7a2e-4665-a435-d3ca4f186cc1")
 		(property "Reference" "R3"
-			(at 355.6 44.4499 0)
+			(at 355.6 57.1499 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -15902,7 +15943,7 @@
 			)
 		)
 		(property "Value" "2k2"
-			(at 355.6 46.9899 0)
+			(at 355.6 59.6899 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -15911,7 +15952,7 @@
 			)
 		)
 		(property "Footprint" "Resistor_SMD:R_0402_1005Metric"
-			(at 351.282 45.72 90)
+			(at 351.282 58.42 90)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -15920,7 +15961,7 @@
 			)
 		)
 		(property "Datasheet" "~"
-			(at 353.06 45.72 0)
+			(at 353.06 58.42 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -15929,7 +15970,7 @@
 			)
 		)
 		(property "Description" "Resistor"
-			(at 353.06 45.72 0)
+			(at 353.06 58.42 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -16569,7 +16610,7 @@
 	)
 	(symbol
 		(lib_id "Device:R")
-		(at 327.66 45.72 0)
+		(at 327.66 58.42 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -16578,7 +16619,7 @@
 		(fields_autoplaced yes)
 		(uuid "f75588d8-f6fe-48ce-bf49-0e9c0d5744b0")
 		(property "Reference" "R1"
-			(at 330.2 44.4499 0)
+			(at 330.2 57.1499 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -16587,7 +16628,7 @@
 			)
 		)
 		(property "Value" "2k2"
-			(at 330.2 46.9899 0)
+			(at 330.2 59.6899 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -16596,7 +16637,7 @@
 			)
 		)
 		(property "Footprint" "Resistor_SMD:R_0402_1005Metric"
-			(at 325.882 45.72 90)
+			(at 325.882 58.42 90)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -16605,7 +16646,7 @@
 			)
 		)
 		(property "Datasheet" "~"
-			(at 327.66 45.72 0)
+			(at 327.66 58.42 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -16614,7 +16655,7 @@
 			)
 		)
 		(property "Description" "Resistor"
-			(at 327.66 45.72 0)
+			(at 327.66 58.42 0)
 			(effects
 				(font
 					(size 1.27 1.27)
