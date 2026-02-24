@@ -19,7 +19,7 @@
    PA1 20 | -           | FREE           | -         | Available
    PA2  1 | SW2         | Play/Pause     | Input     | Internal pullup, FALLING
    PA3  2 | -           | FREE           | -         | EXTCLK capable
-   PA4  5 | LED_STATUS  | Beat indicator | Output    | Active low
+   PA4  5 | -           | FREE           | -         | Available
    PA5  6 | LED5 (MSB)  | LED bit 4      | Output    | Active low
    PA6  7 | LED4        | LED bit 3      | Output    | Active low
    PA7  8 | LED3        | LED bit 2      | Output    | Active low
@@ -34,8 +34,8 @@
    PC2 17 | SW1         | Decrease BPM   | Input     | Internal pullup, FALLING
    PC3 18 | -           | FREE           | -         | Available
 
-   Used: 12 pins (3 buttons + 5 BPM LEDs + 1 status LED + 2 I2C + 1 UPDI)
-   Free:  6 pins (PA1, PA3, PB3, PC0, PC1, PC3)
+   Used: 11 pins (3 buttons + 5 BPM LEDs + 2 I2C + 1 UPDI)
+   Free:  7 pins (PA1, PA3, PA4, PB3, PC0, PC1, PC3)
    Power: 2 pins (VDD, GND)
    Total: 20
    ============================================================================ */
@@ -61,7 +61,6 @@ static void task_play(void *ctx);
 static void task_pause(void *ctx);
 static void task_haptic_standby(void *ctx);
 static void task_hide_bpm(void *ctx);
-static void task_hide_status(void *ctx);
 static void task_debounce(void *ctx);
 static void action_dec(void);
 static void action_inc(void);
@@ -75,7 +74,6 @@ enum TaskIndex
   TASK_PLAY,
   TASK_HAPTIC_STANDBY,
   TASK_HIDE_BPM,
-  TASK_HIDE_STATUS,
   TASK_PAUSE,
   NUM_TASKS
 };
@@ -93,7 +91,6 @@ static Task tasks[NUM_TASKS] = {
     {0, 0, task_play, 0},               // TASK_PLAY
     {0, 0, task_haptic_standby, 0},     // TASK_HAPTIC_STANDBY
     {0, 0, task_hide_bpm, 0},           // TASK_HIDE_BPM
-    {0, 0, task_hide_status, 0},        // TASK_HIDE_STATUS
     {0, 0, task_pause, 0}               // TASK_PAUSE
 };
 
@@ -105,16 +102,14 @@ static Task tasks[NUM_TASKS] = {
 
 // BPM Display LEDs (5 bits, scaled by 5) - all active low
 // LED5 is MSB (bit 4), LED1 is LSB (bit 0)
-#define LED_STATUS_PIN PIN4_bm // PA4 - beat flash indicator
-#define LED5_PIN PIN5_bm       // PA5 - bit 4 (MSB)
-#define LED4_PIN PIN6_bm       // PA6 - bit 3
-#define LED3_PIN PIN7_bm       // PA7 - bit 2
-#define LED2_PIN PIN5_bm       // PB5 - bit 1
-#define LED1_PIN PIN4_bm       // PB4 - bit 0 (LSB)
+#define LED5_PIN PIN5_bm // PA5 - bit 4 (MSB)
+#define LED4_PIN PIN6_bm // PA6 - bit 3
+#define LED3_PIN PIN7_bm // PA7 - bit 2
+#define LED2_PIN PIN5_bm // PB5 - bit 1
+#define LED1_PIN PIN4_bm // PB4 - bit 0 (LSB)
 
 // Timing constants (in RTC ticks at 1024Hz, 1 tick ≈ 1ms)
 #define DEBOUNCE_DELAY 30
-#define BEAT_FLASH_MS 100
 #define HAPTIC_DRIVE_MS 12 // ~2 cycles at 170 Hz (see haptic_trigger for derivation)
 #define LED_ON_DURATION 500
 #define BPM_INCREMENT 5
@@ -277,11 +272,12 @@ static void init_rtc(void)
 
 static void init_unused_pins_low_power(void)
 {
-  // PA1, PA3 are free (PA2=SW2, PA4=status LED, PA5-PA7=BPM LEDs)
-  PORTA.OUTCLR = PIN1_bm | PIN3_bm;
-  PORTA.DIRSET = PIN1_bm | PIN3_bm;
+  // PA1, PA3, PA4 are free (PA2=SW2, PA5-PA7=BPM LEDs)
+  PORTA.OUTCLR = PIN1_bm | PIN3_bm | PIN4_bm;
+  PORTA.DIRSET = PIN1_bm | PIN3_bm | PIN4_bm;
   PORTA.PIN1CTRL = PORT_ISC_INPUT_DISABLE_gc;
   PORTA.PIN3CTRL = PORT_ISC_INPUT_DISABLE_gc;
+  PORTA.PIN4CTRL = PORT_ISC_INPUT_DISABLE_gc;
 
   // PB3 is free (PB2 is now SW3)
   PORTB.OUTCLR = PIN3_bm;
@@ -307,9 +303,9 @@ static void init_buttons(void)
 
 static void init_leds(void)
 {
-  // Configure LED pins as outputs on PORTA (PA4=status, PA5=LED5 MSB, PA6=LED4, PA7=LED3)
-  PORTA.DIRSET = LED_STATUS_PIN | LED5_PIN | LED4_PIN | LED3_PIN;
-  PORTA.OUTSET = LED_STATUS_PIN | LED5_PIN | LED4_PIN | LED3_PIN; // Start HIGH (LEDs off - active low)
+  // Configure LED pins as outputs on PORTA (PA5=LED5 MSB, PA6=LED4, PA7=LED3)
+  PORTA.DIRSET = LED5_PIN | LED4_PIN | LED3_PIN;
+  PORTA.OUTSET = LED5_PIN | LED4_PIN | LED3_PIN; // Start HIGH (LEDs off - active low)
 
   // Configure LED pins as outputs on PORTB (PB4=LED1 LSB, PB5=LED2)
   PORTB.DIRSET = LED1_PIN | LED2_PIN;
@@ -417,17 +413,6 @@ static void show_bpm(void)
     PORTA.OUTSET = LED5_PIN;
 }
 
-static void show_status(void)
-{
-  PORTA.OUTCLR = LED_STATUS_PIN; // Active low
-}
-
-static void task_hide_status(void *ctx)
-{
-  (void)ctx;
-  PORTA.OUTSET = LED_STATUS_PIN;
-}
-
 static void task_hide_bpm(void *ctx)
 {
   (void)ctx;
@@ -449,9 +434,6 @@ static void task_haptic_standby(void *ctx)
 static void task_play(void *ctx)
 {
   (void)ctx;
-  show_status();
-  schedule_task(TASK_HIDE_STATUS, BEAT_FLASH_MS);
-
   uint16_t ticks = (60UL * 1024) / bpm;
   schedule_task(TASK_PLAY, ticks);
 
@@ -464,7 +446,6 @@ static void task_pause(void *ctx)
   cancel_task(TASK_PLAY);
   cancel_task(TASK_HAPTIC_STANDBY);
   task_hide_bpm(0);
-  task_hide_status(0);
   task_haptic_standby(0); // brake and standby unconditionally - harmless if motor already stopped
 }
 
