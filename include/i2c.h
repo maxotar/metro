@@ -16,7 +16,7 @@
 // Initialize I2C hardware
 void init_i2c(void);
 
-// Shutdown I2C and drive pins low to prevent current through external pullups
+// Shutdown I2C and release pins as inputs (external pullups hold lines idle-high)
 void i2c_shutdown(void);
 
 // Write multiple bytes to I2C device

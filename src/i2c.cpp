@@ -57,13 +57,15 @@ void i2c_shutdown(void)
     TWI0.MCTRLA = 0;
     TWI0.MCTRLB = 0;
 
-    I2C_PORT.OUTCLR = I2C_SDA_PIN_bm | I2C_SCL_PIN_bm;
-    I2C_PORT.DIRSET = I2C_SDA_PIN_bm | I2C_SCL_PIN_bm;
+    // Release pins as inputs - external pullups hold lines idle-high.
+    // This leaves the bus in a valid idle state and avoids ~1.4 mA of
+    // continuous pullup current that would flow if lines were driven low.
+    I2C_PORT.DIRCLR = I2C_SDA_PIN_bm | I2C_SCL_PIN_bm;
 }
 
 bool i2c_write_bytes(uint8_t addr7, const uint8_t *data, uint8_t len)
 {
-    TWI0.MADDR = (addr7 << 1);
+    TWI0.MADDR = (uint8_t)(addr7 << 1);
     if (!twi_wait(TWI_WIF_bm))
         return false;
     if (TWI0.MSTATUS & (TWI_ARBLOST_bm | TWI_BUSERR_bm | TWI_RXACK_bm))
