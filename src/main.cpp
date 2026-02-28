@@ -96,8 +96,6 @@ static Task tasks[NUM_TASKS] = {
 
 // Macros
 #define NUM_BUTTONS (sizeof(buttons) / sizeof(Button))
-#define MIN(a, b) ((a) < (b) ? (a) : (b))
-#define MAX(a, b) ((a) > (b) ? (a) : (b))
 #define TASK_PENDING (1 << 0)
 
 // BPM Display LEDs (5 bits, scaled by 5) - all active low
@@ -108,13 +106,61 @@ static Task tasks[NUM_TASKS] = {
 #define LED2_PIN PIN5_bm // PB5 - bit 1
 #define LED1_PIN PIN4_bm // PB4 - bit 0 (LSB)
 
-// Timing constants (in RTC ticks at 1024Hz, 1 tick ≈ 1ms)
-#define DEBOUNCE_DELAY 30
-#define HAPTIC_DRIVE_MS 12 // ~2 cycles at 170 Hz (see haptic_trigger for derivation)
-#define LED_ON_DURATION 500
+// Timing constants (in RTC ticks at 32kHz, 1 tick = 0.030517578125 ms)
+#define DEBOUNCE_DELAY 983    // ~30 ms
+#define HAPTIC_DRIVE_MS 393   // ~12 ms
+#define LED_ON_DURATION 16384 // ~500 ms
+
 #define BPM_INCREMENT 5
-#define BPM_MIN 5
+#define BPM_MIN 40
 #define BPM_MAX 155
+#define BPM_STEPS (((BPM_MAX - BPM_MIN) / BPM_INCREMENT) + 1)
+
+static const uint16_t bpm_ticks[BPM_STEPS] = {
+    49152,
+    43690,
+    39321,
+    35746,
+    32768,
+    30247,
+    28086,
+    26214,
+    24576,
+    23130,
+    21845,
+    20695,
+    19660,
+    18724,
+    17873,
+    17096,
+    16384,
+    15728,
+    15123,
+    14563,
+    14043,
+    13556,
+    13107,
+    12684,
+};
+
+static inline uint16_t ticks_for_bpm(uint16_t bpm)
+{
+  if (bpm < BPM_MIN)
+    bpm = BPM_MIN;
+  else if (bpm > BPM_MAX)
+    bpm = BPM_MAX;
+  return bpm_ticks[(bpm - BPM_MIN) / BPM_INCREMENT];
+}
+
+static inline uint8_t min_u8(uint8_t a, uint8_t b)
+{
+  return a < b ? a : b;
+}
+
+static inline uint8_t max_u8(uint8_t a, uint8_t b)
+{
+  return a > b ? a : b;
+}
 
 // DRV2605L I2C address and registers used in this firmware
 #define DRV2605L_ADDR 0x5A
@@ -241,32 +287,23 @@ static inline void rtc_wait_ready(void)
 
 static void init_rtc(void)
 {
-  // Wait for any previous power-on synchronization to finish
   rtc_wait_ready();
 
-  // Disable RTC before changing configuration
   RTC.CTRLA = 0;
-  rtc_wait_ready(); // MUST wait after disabling before changing CLKSEL
+  rtc_wait_ready();
 
-  // Select internal 1kHz clock source
-  RTC.CLKSEL = RTC_CLKSEL_INT1K_gc;
-  rtc_wait_ready(); // MUST wait after changing clock source
+  RTC.CLKSEL = RTC_CLKSEL_INT32K_gc;
+  rtc_wait_ready();
 
-  // Clear any pending interrupt flags
   RTC.INTFLAGS = RTC_OVF_bm | RTC_CMP_bm;
 
-  // Set initial compare value for first metronome tick
-  RTC.CMP = 100;
-  rtc_wait_ready(); // MUST wait after setting compare value
+  RTC.CMP = 3276; // 100ms at 32.768kHz
+  rtc_wait_ready();
 
-  // Enable RTC with DIV1 prescaler, run in standby mode
   RTC.CTRLA = RTC_PRESCALER_DIV1_gc | RTC_RTCEN_bm | RTC_RUNSTDBY_bm;
-  rtc_wait_ready(); // MUST wait after enabling RTC
+  rtc_wait_ready();
 
-  // Enable compare match interrupt
   RTC.INTCTRL = RTC_CMP_bm;
-
-  // Final wait to ensure RTC is fully operational before returning
   rtc_wait_ready();
 }
 
@@ -316,6 +353,7 @@ static void schedule_task(uint8_t task, uint16_t delay)
 {
   ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
   {
+    rtc_wait_ready();
     tasks[task].timeDue = RTC.CNT + delay;
     tasks[task].flags |= TASK_PENDING;
   }
@@ -434,9 +472,8 @@ static void task_haptic_standby(void *ctx)
 static void task_play(void *ctx)
 {
   (void)ctx;
-  uint16_t ticks = (60UL * 1024) / bpm;
+  uint16_t ticks = ticks_for_bpm(bpm);
   schedule_task(TASK_PLAY, ticks);
-
   haptic_trigger();
 }
 
@@ -452,21 +489,20 @@ static void task_pause(void *ctx)
 static void task_debounce(void *ctx)
 {
   Button *btn = (Button *)ctx;
-  // Debounce period elapsed - clear any accumulated flag and re-enable falling-edge interrupt
   btn->port->INTFLAGS = btn->pinMask;
   *(btn->pinCtrl) = PORT_PULLUPEN_bm | PORT_ISC_FALLING_gc;
 }
 
 static void action_dec(void)
 {
-  bpm = MAX(bpm - BPM_INCREMENT, BPM_MIN);
+  bpm = max_u8(bpm - BPM_INCREMENT, BPM_MIN);
   show_bpm();
   schedule_task(TASK_HIDE_BPM, LED_ON_DURATION);
 }
 
 static void action_inc(void)
 {
-  bpm = MIN(bpm + BPM_INCREMENT, BPM_MAX);
+  bpm = min_u8(bpm + BPM_INCREMENT, BPM_MAX);
   show_bpm();
   schedule_task(TASK_HIDE_BPM, LED_ON_DURATION);
 }
@@ -484,6 +520,7 @@ static bool process_tasks(void)
 
   ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
   {
+    rtc_wait_ready();
     now = RTC.CNT;
   }
 
@@ -533,6 +570,7 @@ static void prepare_next_wakeup(void)
 
   ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
   {
+    rtc_wait_ready();
     now = RTC.CNT;
     for (uint8_t i = 0; i < NUM_TASKS; i++)
     {
@@ -549,12 +587,9 @@ static void prepare_next_wakeup(void)
 
   if (found)
   {
+    rtc_wait_ready();
     RTC.CMP = next;
-
-    // Wait for CMP sync outside the atomic block - can take up to 2 ms at 1kHz
-    while (RTC.STATUS & RTC_CMPBUSY_bm)
-      ;
-
+    rtc_wait_ready();
     RTC.INTFLAGS = RTC_CMP_bm;
     RTC.INTCTRL = RTC_CMP_bm;
   }
