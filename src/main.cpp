@@ -20,15 +20,15 @@
    PA2  1 | SW2         | Play/Pause     | Input     | Internal pullup, FALLING
    PA3  2 | -           | FREE           | -         | EXTCLK capable
    PA4  5 | -           | FREE           | -         | Available
-   PA5  6 | LED5 (MSB)  | LED bit 4      | Output    | Active low
-   PA6  7 | LED4        | LED bit 3      | Output    | Active low
+   PB4 10 | LED5 (MSB)  | LED bit 4      | Output    | Active low
+   PB5  9 | LED4        | LED bit 3      | Output    | Active low
    PA7  8 | LED3        | LED bit 2      | Output    | Active low
    PB0 14 | TWI0 SCL    | I2C Clock      | I2C       | 4.7kΩ pullup
    PB1 13 | TWI0 SDA    | I2C Data       | I2C       | 4.7kΩ pullup
    PB2 12 | SW3         | Increase BPM   | Input     | Internal pullup, FALLING
    PB3 11 | -           | FREE           | -         | Available
-   PB4 10 | LED1 (LSB)  | LED bit 0      | Output    | Active low
-   PB5  9 | LED2        | LED bit 1      | Output    | Active low
+   PA5  6 | LED1 (LSB)  | LED bit 0      | Output    | Active low
+   PA6  7 | LED2        | LED bit 1      | Output    | Active low
    PC0 15 | -           | FREE           | -         | Available
    PC1 16 | -           | FREE           | -         | Available
    PC2 17 | SW1         | Decrease BPM   | Input     | Internal pullup, FALLING
@@ -51,7 +51,7 @@ typedef struct
 
 typedef struct
 {
-  uint16_t timeDue;
+  uint32_t timeDue; /* 32‑bit absolute tick count, extended in software */
   uint8_t flags;
   void (*callback)(void *ctx);
   void *context;
@@ -84,6 +84,12 @@ static Button buttons[] = {
     {PIN2_bm, &PORTB, &PORTB.PIN2CTRL, TASK_BTN_INC_DEBOUNCE, action_inc},         // SW3 - PB2 - Increase BPM
 };
 
+/* software-extended 32‑bit RTC tick counter; incremented on every
+   16‑bit overflow so that rtc_ticks + RTC.CNT gives a monotonic 32‑bit
+   timebase.  using a wider time base removes the half‑range ambiguity
+   that caused the low‑tempo buzzing. */
+static volatile uint32_t rtc_ticks = 0;
+
 static Task tasks[NUM_TASKS] = {
     {0, 0, task_debounce, &buttons[0]}, // TASK_BTN_DEC_DEBOUNCE
     {0, 0, task_debounce, &buttons[1]}, // TASK_BTN_PLAY_DEBOUNCE
@@ -99,12 +105,14 @@ static Task tasks[NUM_TASKS] = {
 #define TASK_PENDING (1 << 0)
 
 // BPM Display LEDs (5 bits, scaled by 5) - all active low
-// LED5 is MSB (bit 4), LED1 is LSB (bit 0)
-#define LED5_PIN PIN5_bm // PA5 - bit 4 (MSB)
-#define LED4_PIN PIN6_bm // PA6 - bit 3
+// LED5 is MSB (bit 4) and now lives on PB4, LED1 is LSB (bit 0) and has
+// shifted to PA5.  The hardware order is therefore reversed compared to
+// the original schematics.
+#define LED5_PIN PIN4_bm // PB4 - bit 4 (MSB)
+#define LED4_PIN PIN5_bm // PB5 - bit 3
 #define LED3_PIN PIN7_bm // PA7 - bit 2
-#define LED2_PIN PIN5_bm // PB5 - bit 1
-#define LED1_PIN PIN4_bm // PB4 - bit 0 (LSB)
+#define LED2_PIN PIN6_bm // PA6 - bit 1
+#define LED1_PIN PIN5_bm // PA5 - bit 0 (LSB)
 
 // Timing constants (in RTC ticks at 32kHz, 1 tick = 0.030517578125 ms)
 #define DEBOUNCE_DELAY 983    // ~30 ms
@@ -287,6 +295,8 @@ static inline void rtc_wait_ready(void)
 
 static void init_rtc(void)
 {
+  rtc_ticks = 0; /* start extended counter from zero */
+
   rtc_wait_ready();
 
   RTC.CTRLA = 0;
@@ -303,7 +313,9 @@ static void init_rtc(void)
   RTC.CTRLA = RTC_PRESCALER_DIV1_gc | RTC_RTCEN_bm | RTC_RUNSTDBY_bm;
   rtc_wait_ready();
 
-  RTC.INTCTRL = RTC_CMP_bm;
+  /* keep overflow interrupt enabled permanently; enable/disable only the
+     compare bit when there are pending tasks */
+  RTC.INTCTRL = RTC_CMP_bm | RTC_OVF_bm;
   rtc_wait_ready();
 }
 
@@ -340,13 +352,13 @@ static void init_buttons(void)
 
 static void init_leds(void)
 {
-  // Configure LED pins as outputs on PORTA (PA5=LED5 MSB, PA6=LED4, PA7=LED3)
-  PORTA.DIRSET = LED5_PIN | LED4_PIN | LED3_PIN;
-  PORTA.OUTSET = LED5_PIN | LED4_PIN | LED3_PIN; // Start HIGH (LEDs off - active low)
+  // Configure LED pins as outputs on PORTA (PA5=LED1 LSB, PA6=LED2, PA7=LED3)
+  PORTA.DIRSET = LED1_PIN | LED2_PIN | LED3_PIN;
+  PORTA.OUTSET = LED1_PIN | LED2_PIN | LED3_PIN; // Start HIGH (LEDs off - active low)
 
-  // Configure LED pins as outputs on PORTB (PB4=LED1 LSB, PB5=LED2)
-  PORTB.DIRSET = LED1_PIN | LED2_PIN;
-  PORTB.OUTSET = LED1_PIN | LED2_PIN; // Start HIGH (LEDs off - active low)
+  // Configure LED pins as outputs on PORTB (PB4=LED5 MSB, PB5=LED4)
+  PORTB.DIRSET = LED5_PIN | LED4_PIN;
+  PORTB.OUTSET = LED5_PIN | LED4_PIN; // Start HIGH (LEDs off - active low)
 }
 
 static void schedule_task(uint8_t task, uint16_t delay)
@@ -354,7 +366,8 @@ static void schedule_task(uint8_t task, uint16_t delay)
   ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
   {
     rtc_wait_ready();
-    tasks[task].timeDue = RTC.CNT + delay;
+    uint32_t now = rtc_ticks + RTC.CNT;
+    tasks[task].timeDue = now + delay;
     tasks[task].flags |= TASK_PENDING;
   }
 }
@@ -426,36 +439,39 @@ static void show_bpm(void)
   // Scale BPM to a 5-bit display value: 0–31 represents BPM_MIN–BPM_MAX in steps of 5
   uint8_t scaled = bpm / 5;
 
-  // LED1 (bit 0) and LED2 (bit 1) on PORTB - active low
+  // LSB bits (0 and 1) are now on PORTA
   if (scaled & 0x01)
-    PORTB.OUTCLR = LED1_PIN;
+    PORTA.OUTCLR = LED1_PIN;
   else
-    PORTB.OUTSET = LED1_PIN;
+    PORTA.OUTSET = LED1_PIN;
   if (scaled & 0x02)
-    PORTB.OUTCLR = LED2_PIN;
+    PORTA.OUTCLR = LED2_PIN;
   else
-    PORTB.OUTSET = LED2_PIN;
+    PORTA.OUTSET = LED2_PIN;
 
-  // LED3 (bit 2), LED4 (bit 3), LED5/MSB (bit 4) on PORTA - active low
+  // middle bit stays on PORTA as well
   if (scaled & 0x04)
     PORTA.OUTCLR = LED3_PIN;
   else
     PORTA.OUTSET = LED3_PIN;
+
+  // upper two bits are on PORTB
   if (scaled & 0x08)
-    PORTA.OUTCLR = LED4_PIN;
+    PORTB.OUTCLR = LED4_PIN;
   else
-    PORTA.OUTSET = LED4_PIN;
+    PORTB.OUTSET = LED4_PIN;
   if (scaled & 0x10)
-    PORTA.OUTCLR = LED5_PIN;
+    PORTB.OUTCLR = LED5_PIN;
   else
-    PORTA.OUTSET = LED5_PIN;
+    PORTB.OUTSET = LED5_PIN;
 }
 
 static void task_hide_bpm(void *ctx)
 {
   (void)ctx;
-  PORTB.OUTSET = LED1_PIN | LED2_PIN;
-  PORTA.OUTSET = LED3_PIN | LED4_PIN | LED5_PIN;
+  // lower three bits are on PORTA, upper two bits are on PORTB
+  PORTA.OUTSET = LED1_PIN | LED2_PIN | LED3_PIN;
+  PORTB.OUTSET = LED4_PIN | LED5_PIN;
 }
 
 static void task_haptic_standby(void *ctx)
@@ -509,19 +525,30 @@ static void action_inc(void)
 
 static void action_play_pause(void)
 {
-  bool isPlaying = (tasks[TASK_PLAY].flags & TASK_PENDING);
+  bool isPlaying;
+  ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
+  {
+    isPlaying = (tasks[TASK_PLAY].flags & TASK_PENDING);
+  }
+
+  if (!isPlaying)
+  {
+    show_bpm();
+    schedule_task(TASK_HIDE_BPM, LED_ON_DURATION);
+  }
+
   schedule_task(isPlaying ? TASK_PAUSE : TASK_PLAY, 0);
 }
 
 static bool process_tasks(void)
 {
   bool ranAny = false;
-  uint16_t now;
+  uint32_t now;
 
   ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
   {
     rtc_wait_ready();
-    now = RTC.CNT;
+    now = rtc_ticks + RTC.CNT;
   }
 
   for (uint8_t i = 0; i < NUM_TASKS; i++)
@@ -529,11 +556,17 @@ static bool process_tasks(void)
     bool run = false;
     ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
     {
-      if ((tasks[i].flags & TASK_PENDING) &&
-          (int16_t)(tasks[i].timeDue - now) <= 0)
+      if (tasks[i].flags & TASK_PENDING)
       {
-        tasks[i].flags &= ~TASK_PENDING;
-        run = true;
+        /* 32‑bit signed difference avoids ambiguity up to ±2³¹ ticks (≈ 21 hr
+           at 32 kHz).  since now and timeDue are monotonic, the sign of the
+           subtraction tells us whether the deadline has passed. */
+        int32_t delta = (int32_t)(now - tasks[i].timeDue);
+        if (delta >= 0)
+        {
+          tasks[i].flags &= ~TASK_PENDING;
+          run = true;
+        }
       }
     }
 
@@ -564,21 +597,24 @@ static bool is_any_task_pending(void)
 
 static void prepare_next_wakeup(void)
 {
-  uint16_t now;
-  uint16_t next = 0;
+  uint32_t now;
+  uint32_t bestDelta = 0;
+  uint16_t cmpVal = 0;
   bool found = false;
 
   ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
   {
     rtc_wait_ready();
-    now = RTC.CNT;
+    now = rtc_ticks + RTC.CNT;
     for (uint8_t i = 0; i < NUM_TASKS; i++)
     {
       if (tasks[i].flags & TASK_PENDING)
       {
-        if (!found || (int16_t)(tasks[i].timeDue - now) < (int16_t)(next - now))
+        uint32_t delta = tasks[i].timeDue - now;
+        if (!found || delta < bestDelta)
         {
-          next = tasks[i].timeDue;
+          bestDelta = delta;
+          cmpVal = (uint16_t)tasks[i].timeDue;
           found = true;
         }
       }
@@ -588,14 +624,15 @@ static void prepare_next_wakeup(void)
   if (found)
   {
     rtc_wait_ready();
-    RTC.CMP = next;
+    RTC.CMP = cmpVal;
     rtc_wait_ready();
     RTC.INTFLAGS = RTC_CMP_bm;
-    RTC.INTCTRL = RTC_CMP_bm;
+    /* leave overflow interrupt enabled; only the compare bit is conditional */
+    RTC.INTCTRL = RTC_CMP_bm | RTC_OVF_bm;
   }
   else
   {
-    RTC.INTCTRL = 0;
+    RTC.INTCTRL = RTC_OVF_bm;
   }
 }
 
@@ -618,7 +655,14 @@ static void handle_button_isr(volatile PORT_t *port)
 
 ISR(RTC_CNT_vect)
 {
-  RTC.INTFLAGS = RTC_CMP_bm;
+  uint8_t flags = RTC.INTFLAGS;
+  RTC.INTFLAGS = flags; /* clear whatever caused the interrupt */
+  if (flags & RTC_OVF_bm)
+  {
+    rtc_ticks += 0x10000; /* one 16‑bit wrap */
+  }
+  /* CMP flag is ignored here; prepare_next_wakeup() is invoked from
+     the main loop after process_tasks() handles the due event. */
 }
 
 ISR(PORTA_PORT_vect)
