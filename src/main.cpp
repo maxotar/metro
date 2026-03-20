@@ -18,17 +18,17 @@
    PA0 19 | UPDI        | Programming    | -         | Reserved for UPDI
    PA1 20 | -           | FREE           | -         | Available
    PA2  1 | SW2         | Play/Pause     | Input     | Internal pullup, FALLING
-   PA3  2 | -           | FREE           | -         | EXTCLK capable
+   PA3  2 | -           | FREE           | -         | Available
    PA4  5 | -           | FREE           | -         | Available
-   PB4 10 | LED5 (MSB)  | LED bit 4      | Output    | Active low
-   PB5  9 | LED4        | LED bit 3      | Output    | Active low
+   PB4 10 | LED1 (LSB)  | LED bit 0      | Output    | Active low
+   PB5  9 | LED2        | LED bit 1      | Output    | Active low
    PA7  8 | LED3        | LED bit 2      | Output    | Active low
    PB0 14 | TWI0 SCL    | I2C Clock      | I2C       | 4.7kΩ pullup
    PB1 13 | TWI0 SDA    | I2C Data       | I2C       | 4.7kΩ pullup
    PB2 12 | SW3         | Increase BPM   | Input     | Internal pullup, FALLING
    PB3 11 | -           | FREE           | -         | Available
-   PA5  6 | LED1 (LSB)  | LED bit 0      | Output    | Active low
-   PA6  7 | LED2        | LED bit 1      | Output    | Active low
+   PA5  6 | LED5 (MSB)  | LED bit 4      | Output    | Active low
+   PA6  7 | LED4        | LED bit 3      | Output    | Active low
    PC0 15 | -           | FREE           | -         | Available
    PC1 16 | -           | FREE           | -         | Available
    PC2 17 | SW1         | Decrease BPM   | Input     | Internal pullup, FALLING
@@ -105,17 +105,17 @@ static Task tasks[NUM_TASKS] = {
 #define TASK_PENDING (1 << 0)
 
 // BPM Display LEDs (5 bits, scaled by 5) - all active low
-// LED5 is MSB (bit 4) and now lives on PB4, LED1 is LSB (bit 0) and has
-// shifted to PA5.  The hardware order is therefore reversed compared to
-// the original schematics.
-#define LED5_PIN PIN4_bm // PB4 - bit 4 (MSB)
-#define LED4_PIN PIN5_bm // PB5 - bit 3
+// LED5 is MSB (bit 4) on PA5, LED4 bit 3 on PA6, LED3 bit 2 on PA7.
+// LED2 bit 1 on PB5, LED1 is LSB bit 0 on PB4.
+// Weighted values: PA5=80, PA6=40, PA7=20, PB5=10, PB4=5.
+#define LED5_PIN PIN5_bm // PA5 - bit 4 (MSB)
+#define LED4_PIN PIN6_bm // PA6 - bit 3
 #define LED3_PIN PIN7_bm // PA7 - bit 2
-#define LED2_PIN PIN6_bm // PA6 - bit 1
-#define LED1_PIN PIN5_bm // PA5 - bit 0 (LSB)
+#define LED2_PIN PIN5_bm // PB5 - bit 1
+#define LED1_PIN PIN4_bm // PB4 - bit 0 (LSB)
 
 // Timing constants (in RTC ticks at 32kHz, 1 tick = 0.030517578125 ms)
-#define DEBOUNCE_DELAY 983    // ~30 ms
+#define DEBOUNCE_DELAY 1966   // ~60 ms
 #define HAPTIC_DRIVE_MS 393   // ~12 ms
 #define LED_ON_DURATION 16384 // ~500 ms
 
@@ -350,15 +350,35 @@ static void init_buttons(void)
   }
 }
 
+static inline void led_set(volatile PORT_t *port, uint8_t pinMask, bool on)
+{
+  if (on)
+    port->OUTCLR = pinMask; // active low
+  else
+    port->OUTSET = pinMask; // off
+}
+
 static void init_leds(void)
 {
-  // Configure LED pins as outputs on PORTA (PA5=LED1 LSB, PA6=LED2, PA7=LED3)
-  PORTA.DIRSET = LED1_PIN | LED2_PIN | LED3_PIN;
-  PORTA.OUTSET = LED1_PIN | LED2_PIN | LED3_PIN; // Start HIGH (LEDs off - active low)
+  // Configure LED pins as outputs on PORTA (MSB bits: PA5, PA6, PA7)
+  PORTA.DIRSET = LED5_PIN | LED4_PIN | LED3_PIN;
+  PORTA.OUTSET = LED5_PIN | LED4_PIN | LED3_PIN; // Start HIGH (LEDs off - active low)
 
-  // Configure LED pins as outputs on PORTB (PB4=LED5 MSB, PB5=LED4)
-  PORTB.DIRSET = LED5_PIN | LED4_PIN;
-  PORTB.OUTSET = LED5_PIN | LED4_PIN; // Start HIGH (LEDs off - active low)
+  // Configure LED pins as outputs on PORTB (LSB bits: PB4, PB5)
+  PORTB.DIRSET = LED1_PIN | LED2_PIN;
+  PORTB.OUTSET = LED1_PIN | LED2_PIN; // Start HIGH (LEDs off - active low)
+}
+
+static void show_bpm(void)
+{
+  // Scale BPM to a 5-bit display value: 0..31 represents BPM_MIN..BPM_MAX in steps of 5
+  uint8_t scaled = bpm / 5;
+
+  led_set(&PORTB, LED1_PIN, (scaled & 0x01) != 0);
+  led_set(&PORTB, LED2_PIN, (scaled & 0x02) != 0);
+  led_set(&PORTA, LED3_PIN, (scaled & 0x04) != 0);
+  led_set(&PORTA, LED4_PIN, (scaled & 0x08) != 0);
+  led_set(&PORTA, LED5_PIN, (scaled & 0x10) != 0);
 }
 
 static void schedule_task(uint8_t task, uint16_t delay)
@@ -434,44 +454,12 @@ static void haptic_trigger(void)
   schedule_task(TASK_HAPTIC_STANDBY, HAPTIC_DRIVE_MS);
 }
 
-static void show_bpm(void)
-{
-  // Scale BPM to a 5-bit display value: 0–31 represents BPM_MIN–BPM_MAX in steps of 5
-  uint8_t scaled = bpm / 5;
-
-  // LSB bits (0 and 1) are now on PORTA
-  if (scaled & 0x01)
-    PORTA.OUTCLR = LED1_PIN;
-  else
-    PORTA.OUTSET = LED1_PIN;
-  if (scaled & 0x02)
-    PORTA.OUTCLR = LED2_PIN;
-  else
-    PORTA.OUTSET = LED2_PIN;
-
-  // middle bit stays on PORTA as well
-  if (scaled & 0x04)
-    PORTA.OUTCLR = LED3_PIN;
-  else
-    PORTA.OUTSET = LED3_PIN;
-
-  // upper two bits are on PORTB
-  if (scaled & 0x08)
-    PORTB.OUTCLR = LED4_PIN;
-  else
-    PORTB.OUTSET = LED4_PIN;
-  if (scaled & 0x10)
-    PORTB.OUTCLR = LED5_PIN;
-  else
-    PORTB.OUTSET = LED5_PIN;
-}
-
 static void task_hide_bpm(void *ctx)
 {
   (void)ctx;
-  // lower three bits are on PORTA, upper two bits are on PORTB
-  PORTA.OUTSET = LED1_PIN | LED2_PIN | LED3_PIN;
-  PORTB.OUTSET = LED4_PIN | LED5_PIN;
+  // blank all BPM LEDs (active low)
+  PORTB.OUTSET = LED1_PIN | LED2_PIN;
+  PORTA.OUTSET = LED3_PIN | LED4_PIN | LED5_PIN;
 }
 
 static void task_haptic_standby(void *ctx)
@@ -505,7 +493,19 @@ static void task_pause(void *ctx)
 static void task_debounce(void *ctx)
 {
   Button *btn = (Button *)ctx;
+
+  // Clear any pending interrupt on this button pin.
   btn->port->INTFLAGS = btn->pinMask;
+
+  // If the switch is still pressed (low), keep waiting; this avoids
+  // bounce-induced repeat events while the user holds the button.
+  if ((btn->port->IN & btn->pinMask) == 0)
+  {
+    schedule_task(btn->taskIndex, DEBOUNCE_DELAY);
+    return;
+  }
+
+  // Button is released (high), re-enable falling-edge interrupt for next press.
   *(btn->pinCtrl) = PORT_PULLUPEN_bm | PORT_ISC_FALLING_gc;
 }
 
